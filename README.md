@@ -1,5 +1,11 @@
 # Unlimiformer
 
+This is the official implementation of the paper [Unlimiformer: Long-Range Transformers with Unlimited Length Input](https://arxiv.org/abs/2305.01625).
+
+Unlimiformer is a method for augmenting pretrained encoder-decoder models with a type of retrieval-based attention. This allows the use of unlimited length inputs with any pretrained encoder-decoder!
+
+Unlimiformer can be used to improve performance of an already-trained model. However, for best results, the model should be trained with Unlimiformer. 
+
 ## Getting Started
 Paste these files from ```src``` into your source code folder: ```random_attention_knn.py```, ```attention_knn.py```, ```index_building.py```. 
 
@@ -10,7 +16,8 @@ To use the model, you must set ```knn=True```.
 ```run.py``` is an example of a full training setup that integrates Unlimiformer -- this is likely more complex than you will need. 
 
 ## Trained models
-The following models from the paper are available on HuggingFace:
+The following models from the paper are available on HuggingFace. Please note that you must add the Unlimiformer-specific files to your repository, and load these models with ```knn=True```. *If you download these models from Huggingface, they may not use Unlimiformer by default!* 
+
 ### Table 3: low-cost training methods
 | Dataset  |  Method | HuggingFace link |
 | ------------- | ------------- | ------------- |
@@ -59,7 +66,17 @@ See Table 5 in the paper for a more detailed breakdown of relative training cost
 * if you're still having issues, set ```gpu_datastore=False``` or ```gpu_index=False```, but note that this will degrade performance
 
 ## Citation
-If you use our method or models, please cite [our paper](https://arxiv.org/abs/2305.01625)!
+If you use our method or models, please cite [our paper](https://arxiv.org/abs/2305.01625):
+```
+@misc{bertsch2023unlimiformer,
+      title={Unlimiformer: Long-Range Transformers with Unlimited Length Input}, 
+      author={Amanda Bertsch and Uri Alon and Graham Neubig and Matthew R. Gormley},
+      year={2023},
+      eprint={2305.01625},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL}
+}
+```
 
-If you have any questions on this work, please feel free to open a GitHub issue or email the authors at ```abertsch@cs.cmu.edu, ualon@cs.cmu.edu```
+If you have any questions on this work, please open a GitHub issue or email the authors at ```abertsch@cs.cmu.edu, ualon@cs.cmu.edu```
 

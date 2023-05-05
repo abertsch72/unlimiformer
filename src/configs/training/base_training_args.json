@@ -1,0 +1,22 @@
+{
+    "eval_steps_override": 0.5,
+    "save_steps_override": 0.5,
+    "evaluation_strategy": "steps",
+    "eval_fraction": 1000,
+    "predict_with_generate": true,
+    "gradient_checkpointing": true,
+    "do_train": true,
+    "do_eval": true,
+    "seed": 42,
+    "warmup_ratio": 0.1,
+    "save_total_limit": 2,
+    "preprocessing_num_workers": 1,
+    "load_best_model_at_end": true,
+    "lr_scheduler": "linear",   
+    "adam_epsilon": 1e-6,
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.98,
+    "weight_decay": 0.001,
+    "patience": 10,
+    "extra_metrics": "bertscore"
+}

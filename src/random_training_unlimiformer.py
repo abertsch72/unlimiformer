@@ -3,14 +3,33 @@ import numpy as np
 import torch
 from torch import nn
 from enum import Enum, auto
-from attention_knn import AttentionKNNWrapper
+from unlimiformer import Unlimiformer, ModelType, UnlimiformerBART, UnlimiformerT5, UnlimiformerLED
+from transformers import BartModel, BartForConditionalGeneration, \
+    T5Model, T5ForConditionalGeneration, \
+    LEDModel, LEDForConditionalGeneration, \
+    AutoModelForSeq2SeqLM
 
-class RandomAttentionKNNWrapper(AttentionKNNWrapper):
-    def __init__(self, random_knn_initial_inputs=True, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class RandomTrainingUnlimiformer(Unlimiformer[ModelType]):
+    def __init__(self, model: ModelType, random_knn_initial_inputs=False, *args, **kwargs):
+        super().__init__(model, *args, **kwargs)
         self.training_hooks_injected = False
         self.random_knn_initial_inputs = random_knn_initial_inputs
         self.train_step = 0
+
+    @classmethod
+    def convert_model(cls, model, *args, **kwargs):
+        model_clone = AutoModelForSeq2SeqLM.from_config(model.config)
+        model_clone.load_state_dict(model.state_dict())
+        type_to_class = {
+            BartModel: RandomUnlimiformerBART,
+            BartForConditionalGeneration: RandomUnlimiformerBART,
+            T5Model: RandomUnlimiformerT5,
+            T5ForConditionalGeneration: RandomUnlimiformerT5,
+            LEDModel: RandomUnlimiformerLED,
+            LEDForConditionalGeneration: RandomUnlimiformerLED,
+        }
+        type_to_class[type(model_clone)](model_clone, *args, **kwargs)
+        return model
 
     def pre_eval_hook(self):
         self.remove_training_hooks(self.model)
@@ -31,34 +50,19 @@ class RandomAttentionKNNWrapper(AttentionKNNWrapper):
             self.train_step += 1
         self.original_model_train_func(mode)
     
-    # def remove_training_hooks(self, model):
-    #     if not self.training_hooks_injected:
-    #         return
-    #     for h in self.hook_handles:
-    #         h.remove()
-    #     model.forward = self.original_forward_func
-
-    #     decoder_layers_to_run = AttentionKNNWrapper.model_attention_layer_to_run[model.config.model_type](
-    #         model, self.knn_layer_begin, self.knn_layer_end)
-    #     for decoder_layer, original_func in zip(decoder_layers_to_run, self.original_decoder_layer_self_attn_forward_funcs):
-    #         decoder_layer.self_attn.forward = original_func
-    #     for decoder_layer, original_func in zip(decoder_layers_to_run, self.original_decoder_layer_forward_funcs):
-    #         decoder_layer.forward = original_func
-    #     self.training_hooks_injected = False
-    
     def inject_training_hooks(self, model):
         if self.training_hooks_injected:
             return
         # self.original_forward_func = model.forward
         model.forward = self.random_inputs_forward_hook
 
-        decoder_layers_to_run = AttentionKNNWrapper.model_attention_layer_to_run[model.config.model_type](
-            model, self.knn_layer_begin, self.knn_layer_end)
+        decoder_layers_to_run = self.attention_layer_to_run(self.knn_layer_begin, self.knn_layer_end)
         
         self.original_decoder_layer_self_attn_forward_funcs = []
         for decoder_layer in decoder_layers_to_run:
-            self.original_decoder_layer_self_attn_forward_funcs.append(decoder_layer.self_attn.forward)
-            decoder_layer.self_attn.forward = self.create_self_attn_random_pre_forward_hook(decoder_layer.self_attn.forward)
+            attention = self.self_attention(decoder_layer)
+            self.original_decoder_layer_self_attn_forward_funcs.append(attention.forward)
+            attention.forward = self.create_self_attn_random_pre_forward_hook(attention.forward)
 
         self.original_decoder_layer_forward_funcs = []
         for decoder_layer in decoder_layers_to_run:
@@ -67,7 +71,8 @@ class RandomAttentionKNNWrapper(AttentionKNNWrapper):
 
         self.original_decoder_layer_cross_attn_forward_funcs = []
         for i, decoder_layer in enumerate(decoder_layers_to_run):
-            self.original_decoder_layer_cross_attn_forward_funcs.append(decoder_layer.encoder_attn.forward)
+            attention = self.cross_attention(decoder_layer)
+            self.original_decoder_layer_cross_attn_forward_funcs.append(attention.forward)
 
         self.inject_hooks_for_unaffected_layers(model, decoder_layers_to_run)
 
@@ -90,6 +95,8 @@ class RandomAttentionKNNWrapper(AttentionKNNWrapper):
                 cross_attn_layer_head_mask=None,
                 past_key_value=None,
                 output_attentions=False,
+                position_bias=None,
+                encoder_decoder_position_bias=None,
                 use_cache=True):
 
             
@@ -97,14 +104,27 @@ class RandomAttentionKNNWrapper(AttentionKNNWrapper):
             def sample_and_forward(hidden_states, attention_mask, 
                     encoder_hidden_states, encoder_attention_mask, layer_head_mask, 
                     cross_attn_layer_head_mask, past_key_value, 
-                    output_attentions, use_cache, long_inputs, long_inputs_mask, rand_indices):
+                    output_attentions, use_cache, long_inputs, long_inputs_mask, rand_indices,
+                    position_bias, encoder_decoder_position_bias):
                 
                 sampled_input, _ = self.sample_long_input(long_inputs, long_inputs_mask, rand_indices)
-                key, value = AttentionKNNWrapper.bart_create_key_value(sampled_input, decoder_layer)
-                return decoder_layer_original_forward_func(hidden_states, attention_mask, 
-                    encoder_hidden_states, encoder_attention_mask, layer_head_mask, 
-                    cross_attn_layer_head_mask, (None, None, key, value), 
-                    output_attentions, use_cache)
+                key, value = self.create_key_value(sampled_input, decoder_layer)
+                decoder_layer_args = self.create_decoder_layer_args(
+                    hidden_states=hidden_states,
+                    attention_mask=attention_mask,
+                    encoder_hidden_states=encoder_hidden_states,
+                    encoder_attention_mask=encoder_attention_mask,
+                    layer_head_mask=layer_head_mask,
+                    cross_attn_layer_head_mask=cross_attn_layer_head_mask,
+                    past_key_value=past_key_value,
+                    output_attentions=output_attentions,
+                    position_bias=position_bias,
+                    encoder_decoder_position_bias=encoder_decoder_position_bias,
+                    use_cache=use_cache,
+                    key=key,value=value
+                )
+                return decoder_layer_original_forward_func(**decoder_layer_args)
+                    
 
             with torch.no_grad():
                 # This sampling must be done outside of the checkpoint, to ensure that the same sampling happens
@@ -115,7 +135,8 @@ class RandomAttentionKNNWrapper(AttentionKNNWrapper):
                 sample_and_forward, hidden_states, attention_mask, 
                 encoder_hidden_states, encoder_attention_mask, layer_head_mask, 
                 cross_attn_layer_head_mask, None, 
-                output_attentions, use_cache, self.long_inputs_encoded, self.long_inputs_mask, rand_indices)
+                output_attentions, use_cache, self.long_inputs_encoded, self.long_inputs_mask, rand_indices,
+                position_bias, encoder_decoder_position_bias)
 
         return checkpointed_decoder_layer
 
@@ -123,14 +144,14 @@ class RandomAttentionKNNWrapper(AttentionKNNWrapper):
         rand_indices_list = []
         seq_lens = self.long_inputs_mask.sum(-1).tolist()
         for seq_len in seq_lens:
-            if seq_len < self.model_encoder_max_len:
-                rand_indices = torch.arange(self.model_encoder_max_len).to(self.device)
+            if seq_len < self.actual_model_window_size:
+                rand_indices = torch.arange(self.actual_model_window_size).to(self.device)
                 rand_indices_list.append(rand_indices)
                 continue
             
-            rand_indices = torch.torch.randperm(seq_len)[:self.model_encoder_max_len].to(self.device)
-            if seq_len < self.model_encoder_max_len:
-                padding = max(self.model_encoder_max_len - seq_len, 0)
+            rand_indices = torch.torch.randperm(seq_len)[:self.actual_model_window_size].to(self.device)
+            if seq_len < self.actual_model_window_size:
+                padding = max(self.actual_model_window_size - seq_len, 0)
                 rand_indices = torch.cat([rand_indices, torch.arange(padding).to(self.device) + seq_len], axis=-1).to(self.device)
             rand_indices_list.append(rand_indices)
         rand_indices = torch.stack(rand_indices_list, dim=0)
@@ -144,12 +165,12 @@ class RandomAttentionKNNWrapper(AttentionKNNWrapper):
         if self.random_knn_initial_inputs:
             encoded_inputs, encoded_inputs_mask = self.sample_long_input(self.long_inputs_encoded, self.long_inputs_mask)
         else:
-            encoded_inputs = self.long_inputs_encoded[:, :self.model_encoder_max_len]
-            encoded_inputs_mask = self.long_inputs_mask[:, :self.model_encoder_max_len]
+            encoded_inputs = self.long_inputs_encoded[:, :self.actual_model_window_size]
+            encoded_inputs_mask = self.long_inputs_mask[:, :self.actual_model_window_size]
         return self.original_forward_func(encoder_outputs=(encoded_inputs, ), labels=labels, attention_mask=encoded_inputs_mask, **kwargs)
 
     def sample_long_input(self, long_inputs_encoded, long_inputs_mask, random_indices=None):
-        if long_inputs_mask.shape[-1] < self.model_encoder_max_len:
+        if long_inputs_mask.shape[-1] < self.actual_model_window_size:
             return long_inputs_encoded, long_inputs_mask
         batch_size = long_inputs_encoded.shape[0]
         
@@ -157,8 +178,8 @@ class RandomAttentionKNNWrapper(AttentionKNNWrapper):
             random_indices = self.sample_random_indices()
         random_mask = torch.zeros_like(long_inputs_mask).to(self.device) \
             .scatter_(dim=-1, index=random_indices, src=torch.ones_like(random_indices)).bool().to(self.device)
-        sampled_input = long_inputs_encoded[random_mask].reshape(batch_size, self.model_encoder_max_len, -1).to(self.device)
-        sampled_mask = long_inputs_mask[random_mask].reshape(batch_size, self.model_encoder_max_len).to(self.device)
+        sampled_input = long_inputs_encoded[random_mask].reshape(batch_size, self.actual_model_window_size, -1).to(self.device)
+        sampled_mask = long_inputs_mask[random_mask].reshape(batch_size, self.actual_model_window_size).to(self.device)
         return sampled_input, sampled_mask
 
     def chunked_encode_input(self, input_ids, attention_mask):
@@ -186,9 +207,19 @@ class RandomAttentionKNNWrapper(AttentionKNNWrapper):
         self.is_input_encoding_pass = False
         if self.verbose:
             print(f'Input: '
-                f'{self.tokenizer.decode(input_ids[0][:self.model_encoder_max_len], skip_special_tokens=True)} ||| '
-                f'{self.tokenizer.decode(input_ids[0][self.model_encoder_max_len:], skip_special_tokens=True)}')
+                f'{self.tokenizer.decode(input_ids[0][:self.actual_model_window_size], skip_special_tokens=True)} ||| '
+                f'{self.tokenizer.decode(input_ids[0][self.actual_model_window_size:], skip_special_tokens=True)}')
             print()
         return long_inputs_encoded, long_inputs_mask
 
-        
+class RandomUnlimiformerBART(RandomTrainingUnlimiformer[BartModel], UnlimiformerBART):
+    def __init__(self, model: BartModel, *args, **kwargs):
+        super().__init__(model, *args, **kwargs)
+
+class RandomUnlimiformerT5(RandomTrainingUnlimiformer[T5Model], UnlimiformerT5):
+    def __init__(self, model: T5Model, *args, **kwargs):
+        super().__init__(model, *args, **kwargs)
+
+class RandomUnlimiformerLED(RandomTrainingUnlimiformer[LEDModel], UnlimiformerLED):
+    def __init__(self, model: LEDModel, *args, **kwargs):
+        super().__init__(model, *args, **kwargs)

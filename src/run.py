@@ -23,18 +23,13 @@ import os
 import sys
 
 import numpy as np
-from attention_knn import AttentionKNNWrapper
-from random_attention_knn import RandomAttentionKNNWrapper
+from unlimiformer import Unlimiformer
+from random_training_unlimiformer import RandomTrainingUnlimiformer
 
 import nltk
 
 # we import the logging frameworks before any other import to make sure all monkey patching for the logging are active
-from sled import SledConfig
-
-try:
-    import comet_ml
-except ImportError:
-    pass
+# from sled import SledConfig
 
 import wandb
 import torch
@@ -64,7 +59,7 @@ from transformers import DataCollatorForSeq2Seq
 from datasets import load_dataset
 
 # noinspection PyUnresolvedReferences
-import sled  # *** required so that SledModels will be registered for the AutoClasses ***
+# import sled  # *** required so that SledModels will be registered for the AutoClasses ***
 
 from utils.config import handle_args_to_ignore
 from utils.decoding import decode
@@ -73,7 +68,7 @@ from utils.duplicates import drop_duplicates_in_input
 from utils.override_training_args import TrainingOverridesArguments
 from utils.custom_seq2seq_trainer import CustomTrainer
 from utils.custom_hf_argument_parser import CustomHfArgumentParser
-from examples.seq2seq.metrics.metrics import HFMetricWrapper, MetricCollection
+from metrics.metrics import HFMetricWrapper, MetricCollection
 
 logger = logging.getLogger('sled')
 
@@ -340,69 +335,56 @@ class DataTrainingArguments:
 
 
 @dataclass
-class KNNArguments:
+class UnlimiformerArguments:
     """
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
-    knn: Optional[bool] = field(
+    test_unlimiformer: Optional[bool] = field(
         default=False,
         metadata={
             "help": "whether to use KNN."
         },
     )
-    knn_verbose: Optional[bool] = field(
+    unlimiformer_verbose: Optional[bool] = field(
         default=False,
         metadata={
             "help": "whether to print KNN intermediate predictions (mostly for debugging)."
         },
     )
-    knn_heatmap: Optional[bool] = field(
-        default=False
-    )
-    knn_layer_begin: Optional[int] = field(
+    layer_begin: Optional[int] = field(
         default=0,
-        metadata={"help": "The layer to begin applying KNN to. KNN will be applied to layers[knn_layer_begin:knn_layer_end]. "
+        metadata={"help": "The layer to begin applying KNN to. KNN will be applied to layers[knn_layer_begin:layer_end]. "
                           "By default, it will be applied to all layers: [0:None]]"}, 
     )
-    knn_layer_end: Optional[int] = field(
+    layer_end: Optional[int] = field(
         default=None,
-        metadata={"help": "The layer to end applying KNN to. KNN will be applied to layers[knn_layer_begin:knn_layer_end]. "
+        metadata={"help": "The layer to end applying KNN to. KNN will be applied to layers[knn_layer_begin:layer_end]. "
                           "By default, it will be applied to all layers: [0:None]]"}, 
     )
-    knn_chunk_overlap: Optional[float] = field(
+    unlimiformer_chunk_overlap: Optional[float] = field(
         default=0.5,
         metadata={"help": "The fraction of overlap between input chunks"},
     )
-    knn_chunk_size: Optional[int] = field(
+    unlimiformer_chunk_size: Optional[int] = field(
         default=None,
         metadata={"help": "The size of each input chunk"},
     )
-    knn_head_num: Optional[int] = field(
+    unlimiformer_head_num: Optional[int] = field(
         default=None,
         metadata={"help": "The head to apply KNN to (if None, apply to all heads)"},
     )
-    knn_exclude: Optional[bool] = field(
+    unlimiformer_exclude: Optional[bool] = field(
         default=False,
         metadata={
             "help": "If True, prioritize the inputs that are **not** in the standard attention window."
         },
     )
-    knn_normalize: Optional[bool] = field(
-        default=False,
-        metadata={
-            "help": "If True, l2-normalize keys and queries before performing KNN search."
-        },
-    )
-    random_knn_training: Optional[bool] = field(
+    random_unlimiformer_training: Optional[bool] = field(
         default=False,
     )
-    random_knn_initial_inputs: Optional[bool] = field(
-        default=True,
-    )
-    knn_training: Optional[bool] = field(
+    unlimiformer_training: Optional[bool] = field(
         default=False,
     )
-    knn_use_pointers: Optional[bool] = field(default=False)
     use_datastore: Optional[bool] = field(default=False)
     flat_index: Optional[bool] = field(default=False)
     test_datastore: Optional[bool] = field(default=False)
@@ -418,14 +400,14 @@ def main():
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = CustomHfArgumentParser((ModelArguments, DataTrainingArguments, TrainingOverridesArguments, KNNArguments))
-    model_args, data_args, training_args, knn_args = parser.parse_dictionary_and_args()
+    parser = CustomHfArgumentParser((ModelArguments, DataTrainingArguments, TrainingOverridesArguments, UnlimiformerArguments))
+    model_args, data_args, training_args, unlimiformer_args = parser.parse_dictionary_and_args()
     
     set_up_logging(training_args)
     logger.info(f"Training Arguments: {training_args}")
     logger.info(f"Data Arguments: {data_args}")
     logger.info(f"Model Arguments: {model_args}")
-    logger.info(f"KNN Arguments: {knn_args}")
+    logger.info(f"Unlimiformer Arguments: {unlimiformer_args}")
 
 
     # Added to avoid wandb.errors.UsageError: Error communicating with wandb process
@@ -481,11 +463,11 @@ def main():
         **config_overrides
     )
     # override for sled models to make sure we are explicit in our request
-    if isinstance(config, SledConfig) and (not data_args.pad_prefix or data_args.max_prefix_length == 0):
-        logger.warning('Setting prepend_prefix to False if using a SLED model, as the input does not have a prefix or '
-                       'pad_prefix is False (all prefixes must be of the same length for SLED). If you do not use SLED '
-                       'or finetune on a dataset with no prefixes, ignore this warning')
-        config.prepend_prefix = False
+    # if isinstance(config, SledConfig) and (not data_args.pad_prefix or data_args.max_prefix_length == 0):
+    #     logger.warning('Setting prepend_prefix to False if using a SLED model, as the input does not have a prefix or '
+    #                    'pad_prefix is False (all prefixes must be of the same length for SLED). If you do not use SLED '
+    #                    'or finetune on a dataset with no prefixes, ignore this warning')
+    #     config.prepend_prefix = False
 
     if model_args.model_name_or_path is None:
         # Padding for divisibility by 8
@@ -520,30 +502,27 @@ def main():
         model = AutoModelForSeq2SeqLM.from_config(
             config,
         )
-    if knn_args.knn:
-        knn_kwargs = {
-            'knn_layer_begin': knn_args.knn_layer_begin, 
-            'knn_layer_end': knn_args.knn_layer_end,
-            'knn_head_num': knn_args.knn_head_num, 
-            'normalize': knn_args.knn_normalize, 'exclude_attention': knn_args.knn_exclude, 
-            'chunk_overlap': knn_args.knn_chunk_overlap,
-            'use_pointers': knn_args.knn_use_pointers, 
-            'model_encoder_max_len': knn_args.knn_chunk_size,
-            'verbose': knn_args.knn_verbose, 'save_heatmap': knn_args.knn_heatmap, 'tokenizer': tokenizer,
-            'knn_training': knn_args.knn_training,
-            'use_datastore': knn_args.use_datastore,
-            'flat_index': knn_args.flat_index,
-            'test_datastore': knn_args.test_datastore,
-            'reconstruct_embeddings': knn_args.reconstruct_embeddings,
-            'gpu_datastore': knn_args.gpu_datastore,
-            'gpu_index': knn_args.gpu_index
+    if unlimiformer_args.test_unlimiformer:
+        unlimiformer_kwargs = {
+            'layer_begin': unlimiformer_args.layer_begin, 
+            'layer_end': unlimiformer_args.layer_end,
+            'unlimiformer_head_num': unlimiformer_args.unlimiformer_head_num, 
+            'exclude_attention': unlimiformer_args.unlimiformer_exclude, 
+            'chunk_overlap': unlimiformer_args.unlimiformer_chunk_overlap,
+            'model_encoder_max_len': unlimiformer_args.unlimiformer_chunk_size,
+            'verbose': unlimiformer_args.unlimiformer_verbose, 'tokenizer': tokenizer,
+            'unlimiformer_training': unlimiformer_args.unlimiformer_training,
+            'use_datastore': unlimiformer_args.use_datastore,
+            'flat_index': unlimiformer_args.flat_index,
+            'test_datastore': unlimiformer_args.test_datastore,
+            'reconstruct_embeddings': unlimiformer_args.reconstruct_embeddings,
+            'gpu_datastore': unlimiformer_args.gpu_datastore,
+            'gpu_index': unlimiformer_args.gpu_index
         }
-        if knn_args.random_knn_training:
-            knn_wrapper = RandomAttentionKNNWrapper(random_knn_initial_inputs=knn_args.random_knn_initial_inputs, 
-                **knn_kwargs)
+        if unlimiformer_args.random_unlimiformer_training:
+            model = RandomTrainingUnlimiformer.convert_model(model, **unlimiformer_kwargs)
         else:
-            knn_wrapper = AttentionKNNWrapper(**knn_kwargs)
-        knn_wrapper.break_into(model)
+            model = Unlimiformer.convert_model(model, **unlimiformer_kwargs)
 
     model.config.use_cache = True
     if training_args.gradient_checkpointing and getattr(model.config, 'use_cache', False) and training_args.do_train:

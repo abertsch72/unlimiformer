@@ -7,13 +7,13 @@ Unlimiformer is a method for augmenting pretrained encoder-decoder models with a
 Unlimiformer can be used to improve performance of an already-trained model. However, for best results, the model should be trained with Unlimiformer. 
 
 ## Getting Started
-Paste these files from ```src``` into your source code folder: ```random_attention_knn.py```, ```attention_knn.py```, ```index_building.py```. 
+Paste these files from ```src``` into your source code folder.
 
 You'll need to set values for the Unlimiformer-specific arguments outlined in ```usage.py```-- you can add these arguments wherever you usually process hyperparameters. 
 
-To use the model, you must set ```knn=True```.
+To use the model, you must set ```test_unlimiformer=True```.
 
-```run.py``` is an example of a full training setup that integrates Unlimiformer -- this is likely more complex than you will need. 
+```run.py``` is an example of a full training setup that integrates Unlimiformer, adopted from [SLED](https://github.com/Mivg/SLED) -- this is likely more complex than you will need. 
 
 ## Trained models
 The following models from the paper are available on HuggingFace. Please note that you must add the Unlimiformer-specific files to your repository, and load these models with ```knn=True```. *If you download these models from Huggingface, they may not use Unlimiformer by default!* 
@@ -51,9 +51,9 @@ For an inexpensive method, we recommend training as usual and using Unlimiformer
 
 
 For best performance, there are 3 expensive settings for training. The best one varies by dataset.
-1. Set ```random_knn_training=True```: this is the *random-encoded training* setting from the paper
-2. Set ```knn_training=True```: this is the *approximate-retrieval training* setting from the paper
-3. Set ```random_knn_training=True``` AND ```knn_training=True```: this is the *alternating training* setting from the paper
+1. Set ```random_unlimiformer_training=True```: this is the *random-encoded training* setting from the paper
+2. Set ```unlimiformer_training=True```: this is the *approximate-retrieval training* setting from the paper
+3. Set ```random_unlimiformer_training=True``` AND ```unlimiformer_training=True```: this is the *alternating training* setting from the paper
 
 See Table 5 in the paper for a more detailed breakdown of relative training costs. 
 

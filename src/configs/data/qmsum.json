@@ -1,0 +1,12 @@
+{
+  "dataset_name": "tau/sled",
+  "dataset_config_name": "qmsum",
+  "max_source_length": 16384,
+  "max_prefix_length": 64,
+  "pad_prefix": true,
+  "num_train_epochs": 20,
+  "generation_max_length": 1024,
+  "metric_names": ["rouge"],
+  "metric_for_best_model": "rouge/geometric_mean",
+  "greater_is_better": true
+}

@@ -1,0 +1,9 @@
+{
+    "model_type": "tau/sled",
+    "underlying_config": "allenai/PRIMERA",
+    "context_size": 4096,
+    "window_fraction": 0.5,
+    "prepend_prefix": true,
+    "encode_prefix": true,
+    "sliding_method": "dynamic"
+  }

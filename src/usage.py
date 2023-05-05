@@ -1,74 +1,61 @@
-from attention_knn import AttentionKNNWrapper
-from random_attention_knn import RandomAttentionKNNWrapper
+from unlimiformer import Unlimiformer
+from random_training_unlimiformer import RandomTrainingUnlimiformer
 
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 
 @dataclass
-class KNNArguments:
+class UnlimiformerArguments:
     """
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
-    knn: Optional[bool] = field(
+    test_unlimiformer: Optional[bool] = field(
         default=False,
         metadata={
             "help": "whether to use KNN."
         },
     )
-    knn_verbose: Optional[bool] = field(
+    unlimiformer_verbose: Optional[bool] = field(
         default=False,
         metadata={
             "help": "whether to print KNN intermediate predictions (mostly for debugging)."
         },
     )
-    knn_heatmap: Optional[bool] = field(
-        default=False
-    )
-    knn_layer_begin: Optional[int] = field(
+    layer_begin: Optional[int] = field(
         default=0,
-        metadata={"help": "The layer to begin applying KNN to. KNN will be applied to layers[knn_layer_begin:knn_layer_end]. "
+        metadata={"help": "The layer to begin applying KNN to. KNN will be applied to layers[knn_layer_begin:layer_end]. "
                           "By default, it will be applied to all layers: [0:None]]"}, 
     )
-    knn_layer_end: Optional[int] = field(
+    layer_end: Optional[int] = field(
         default=None,
-        metadata={"help": "The layer to end applying KNN to. KNN will be applied to layers[knn_layer_begin:knn_layer_end]. "
+        metadata={"help": "The layer to end applying KNN to. KNN will be applied to layers[knn_layer_begin:layer_end]. "
                           "By default, it will be applied to all layers: [0:None]]"}, 
     )
-    knn_chunk_overlap: Optional[float] = field(
+    unlimiformer_chunk_overlap: Optional[float] = field(
         default=0.5,
         metadata={"help": "The fraction of overlap between input chunks"},
     )
-    knn_chunk_size: Optional[int] = field(
+    unlimiformer_chunk_size: Optional[int] = field(
         default=None,
         metadata={"help": "The size of each input chunk"},
     )
-    knn_head_num: Optional[int] = field(
+    unlimiformer_head_num: Optional[int] = field(
         default=None,
         metadata={"help": "The head to apply KNN to (if None, apply to all heads)"},
     )
-    knn_exclude: Optional[bool] = field(
+    unlimiformer_exclude: Optional[bool] = field(
         default=False,
         metadata={
             "help": "If True, prioritize the inputs that are **not** in the standard attention window."
         },
     )
-    knn_normalize: Optional[bool] = field(
-        default=False,
-        metadata={
-            "help": "If True, l2-normalize keys and queries before performing KNN search."
-        },
-    )
-    random_knn_training: Optional[bool] = field(
+    random_unlimiformer_training: Optional[bool] = field(
         default=False,
     )
-    random_knn_initial_inputs: Optional[bool] = field(
-        default=True,
-    )
-    knn_training: Optional[bool] = field(
+    unlimiformer_training: Optional[bool] = field(
         default=False,
     )
-    knn_use_pointers: Optional[bool] = field(default=False)
     use_datastore: Optional[bool] = field(default=False)
     flat_index: Optional[bool] = field(default=False)
     test_datastore: Optional[bool] = field(default=False)
@@ -80,32 +67,25 @@ class KNNArguments:
 
 # include these lines in your code somewhere before model training
 def training_addin():
-    if knn_args.knn:
-        knn_kwargs = {
-            'knn_layer_begin': knn_args.knn_layer_begin, 
-            'knn_layer_end': knn_args.knn_layer_end,
-            'knn_head_num': knn_args.knn_head_num, 
-            'normalize': knn_args.knn_normalize, 'exclude_attention': knn_args.knn_exclude, 
-            'chunk_overlap': knn_args.knn_chunk_overlap,
-            'use_pointers': knn_args.knn_use_pointers, 
-            'model_encoder_max_len': knn_args.knn_chunk_size,
-            'verbose': knn_args.knn_verbose, 'save_heatmap': knn_args.knn_heatmap, 'tokenizer': tokenizer,
-            'knn_training': knn_args.knn_training,
-            'use_datastore': knn_args.use_datastore,
-            'flat_index': knn_args.flat_index,
-            'test_datastore': knn_args.test_datastore,
-            'reconstruct_embeddings': knn_args.reconstruct_embeddings,
-            'gpu_datastore': knn_args.gpu_datastore,
-            'gpu_index': knn_args.gpu_index
+    if knn_args.test_unlimiformer:
+        unlimiformer_kwargs = {
+            'layer_begin': unlimiformer_args.layer_begin, 
+            'layer_end': unlimiformer_args.layer_end,
+            'unlimiformer_head_num': unlimiformer_args.unlimiformer_head_num, 
+            'exclude_attention': unlimiformer_args.unlimiformer_exclude, 
+            'chunk_overlap': unlimiformer_args.unlimiformer_chunk_overlap,
+            'model_encoder_max_len': unlimiformer_args.unlimiformer_chunk_size,
+            'verbose': unlimiformer_args.unlimiformer_verbose, 'tokenizer': tokenizer,
+            'unlimiformer_training': unlimiformer_args.unlimiformer_training,
+            'use_datastore': unlimiformer_args.use_datastore,
+            'flat_index': unlimiformer_args.flat_index,
+            'test_datastore': unlimiformer_args.test_datastore,
+            'reconstruct_embeddings': unlimiformer_args.reconstruct_embeddings,
+            'gpu_datastore': unlimiformer_args.gpu_datastore,
+            'gpu_index': unlimiformer_args.gpu_index
         }
-        if knn_args.random_knn_training:
-            knn_wrapper = RandomAttentionKNNWrapper(random_knn_initial_inputs=knn_args.random_knn_initial_inputs, 
-                **knn_kwargs)
+        if unlimiformer_args.random_unlimiformer_training:
+            model = RandomTrainingUnlimiformer.convert_model(model, **unlimiformer_kwargs)
         else:
-            knn_wrapper = AttentionKNNWrapper(**knn_kwargs)
-        knn_wrapper.break_into(model)
-
-# OPTIONALLY, to stop using Unlimiformer:
-def breakout_addin():
-    knn_wrapper.break_out(model)
+            model = Unlimiformer.convert_model(model, **unlimiformer_kwargs)
 

@@ -8,11 +8,11 @@ Unlimiformer is a method for augmenting pretrained encoder-decoder models with a
 Unlimiformer can be used to improve performance of an already-trained model. However, for best results, the model should be trained with Unlimiformer. 
 
 ## Getting Started
-Paste these files from ```src``` into your source code folder.
+Paste the files from ```src``` into your source code folder.
 
-You'll need to set values for the Unlimiformer-specific arguments outlined in ```usage.py```-- you can add these arguments wherever you usually process hyperparameters. 
+You'll need to set values for the Unlimiformer-specific arguments outlined in ```usage.py```-- you can add these arguments wherever you usually process hyperparameters. To use the model, you must set ```test_unlimiformer=True```. For datastore usage, the model must be in evaluation model (e.g. call ```model.eval()``` before inference). 
 
-To use the model, you must set ```test_unlimiformer=True```.
+```inference-example.py``` outlines a minimal example for running a sequence through an Unlimiformer model, using the default arguments. 
 
 ```run.py``` is an example of a full training setup that integrates Unlimiformer, adopted from [SLED](https://github.com/Mivg/SLED) -- this is likely more complex than you will need. 
 

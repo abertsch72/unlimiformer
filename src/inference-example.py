@@ -4,18 +4,24 @@ from usage import UnlimiformerArguments, training_addin
 
 from transformers import BartForConditionalGeneration, AutoTokenizer
 from datasets import load_dataset
+import torch
 
-# example using booksum
-modelname = "abertsch/unlimiformer-bart-booksum-alternating"
-dataset = load_dataset("abertsch/booksum-fullbooks", "validation")
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# example using govreport
+modelname = "abertsch/unlimiformer-bart-govreport-alternating"
+dataset = load_dataset("urialon/gov_report_validation")
 
 tokenizer = AutoTokenizer.from_pretrained("facebook/bart-base")
 model = BartForConditionalGeneration.from_pretrained(modelname)
 
-example_input = dataset['train'][0]['book']
+example_input = dataset['validation'][0]['input']
 
 example = tokenizer(example_input, truncation=False, return_tensors="pt")
 truncated_example = tokenizer(example_input, truncation=True, max_length=1024, return_tensors="pt")
+
+example.to(device)
+truncated_example.to(device)
 
 print(f"INPUT LENGTH (tokens): {example['input_ids'].shape[-1]}")
 
@@ -37,9 +43,15 @@ unlimiformer_kwargs = {
             'gpu_datastore': defaults.gpu_datastore,
             'gpu_index': defaults.gpu_index
 }
-#print(model.generate(**truncated_example, max_length=1024))
-truncated_out = tokenizer.batch_decode(model.generate(**truncated_example, max_length=1024))
+
+model.to(device)
+# the output of the model /without/ using unlimiformer 
+truncated_out = tokenizer.batch_decode(model.generate(**truncated_example, max_length=512))
+
 model = Unlimiformer.convert_model(model, **unlimiformer_kwargs)
+model.eval()
+model.to(device)
 
-unlimiformer_out = tokenizer.decode(model.generate(**example, max_length=1024))
-
+# the output of the model /with/ unlimiformer 
+unlimiformer_out = tokenizer.batch_decode(model.generate(**example, max_length=512), ignore_special_tokens=True)[0]
+print(unlimiformer_out)

@@ -69,13 +69,11 @@ See Table 5 in the paper for a more detailed breakdown of relative training cost
 ## Citation
 If you use our method or models, please cite [our paper](https://arxiv.org/abs/2305.01625):
 ```
-@misc{bertsch2023unlimiformer,
-      title={Unlimiformer: Long-Range Transformers with Unlimited Length Input}, 
-      author={Amanda Bertsch and Uri Alon and Graham Neubig and Matthew R. Gormley},
-      year={2023},
-      eprint={2305.01625},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL}
+@article{bertsch2023unlimiformer,
+  title={Unlimiformer: Long-Range Transformers with Unlimited Length Input},
+  author={Bertsch, Amanda and Alon, Uri and Neubig, Graham and Gormley, Matthew R},
+  journal={arXiv preprint arXiv:2305.01625},
+  year={2023}
 }
 ```
 

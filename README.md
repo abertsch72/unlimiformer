@@ -17,10 +17,10 @@ To use the model, you must set ```test_unlimiformer=True```.
 ```run.py``` is an example of a full training setup that integrates Unlimiformer, adopted from [SLED](https://github.com/Mivg/SLED) -- this is likely more complex than you will need. 
 
 ## Trained models
-The following models from the paper are available on HuggingFace. Please note that you must add the Unlimiformer-specific files to your repository, and load these models with ```knn=True```. *If you download these models from Huggingface, they may not use Unlimiformer by default!* 
+The following models from the paper are available on Hugging Face. Please note that you must add the Unlimiformer-specific files to your repository, and load these models with ```knn=True```. *If you download these models from Hugging Face, they may not use Unlimiformer by default!* 
 
 ### Table 3: low-cost training methods
-| Dataset  |  Method | HuggingFace link |
+| Dataset  |  Method | Hugging Face link |
 | ------------- | ------------- | ------------- |
 | GovReport | Baseline: BART-base  | [abertsch/bart-base-govreport](https://huggingface.co/abertsch/bart-base-govreport)  |
 | GovReport  | BART-base + Unlimiformer early stopping  | [abertsch/unlimiformer-bart-govreport-earlyk](https://huggingface.co/abertsch/unlimiformer-bart-govreport-earlyk) |
@@ -29,13 +29,13 @@ The following models from the paper are available on HuggingFace. Please note th
 
 
 ### Table 4: Long-range training methods
-| Dataset  |  Method | HuggingFace link |
+| Dataset  |  Method | Hugging Face link |
 | ------------- | ------------- | ------------- |
 | GovReport | BART + Unlimiformer (alternating training)  | [abertsch/unlimiformer-bart-govreport-alternating](https://huggingface.co/abertsch/unlimiformer-bart-govreport-alternating)  |
 | SummScreen | BART + Unlimiformer (retrieval training)  | [abertsch/unlimiformer-bart-summscreen-retrieval](https://huggingface.co/abertsch/unlimiformer-bart-summscreen-retrieval) |
 
 ## Table 5: BookSum
-| Dataset  |  Method | HuggingFace link |
+| Dataset  |  Method | Hugging Face link |
 | ------------- | ------------- | ------------- |
 | BookSum | Baseline: BART-base  | [abertsch/bart-base-booksum](https://huggingface.co/abertsch/bart-base-booksum)  |
 | BookSum  | BART-base + Unlimiformer early stopping  | [abertsch/unlimiformer-bart-booksum-earlyk](https://huggingface.co/abertsch/unlimiformer-bart-booksum-earlyk) |

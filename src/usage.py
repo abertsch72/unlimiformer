@@ -11,7 +11,7 @@ class UnlimiformerArguments:
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
     test_unlimiformer: Optional[bool] = field(
-        default=False,
+        default=True,
         metadata={
             "help": "whether to use KNN."
         },

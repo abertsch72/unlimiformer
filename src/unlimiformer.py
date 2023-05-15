@@ -18,21 +18,21 @@ logger.setLevel(20)
 ModelType = TypeVar('ModelType')
 class Unlimiformer(Generic[ModelType]):
     def __init__(self, model: ModelType, 
-            knn_layer_begin=-1, knn_layer_end=None,
-            knn_head_num=None, normalize=False, 
+            layer_begin=-1, layer_end=None,
+            unlimiformer_head_num=None, normalize=False, 
             exclude_attention=False, 
             model_encoder_max_len=None,
             chunk_overlap=0,
             verbose=False, save_heatmap=False, 
-            tokenizer=None, knn_training=False,
+            tokenizer=None, unlimiformer_training=False,
             use_datastore=False, 
             flat_index=False,
             test_datastore=False, reconstruct_embeddings=False, 
             gpu_datastore=False, gpu_index=False):
         self.model = model
-        self.knn_layer_begin = knn_layer_begin
-        self.knn_layer_end = knn_layer_end
-        self.specific_head = knn_head_num
+        self.layer_begin = layer_begin
+        self.layer_end = layer_end
+        self.specific_head = unlimiformer_head_num
         self.normalize = normalize
         self.exclude_attention = exclude_attention
         self.actual_model_window_size = None
@@ -41,7 +41,7 @@ class Unlimiformer(Generic[ModelType]):
         self.verbose = verbose
         self.save_heatmap = save_heatmap
         self.tokenizer = tokenizer
-        self.knn_training = knn_training
+        self.unlimiformer_training = unlimiformer_training
 
         self.use_datastore = use_datastore
         self.flat_index = flat_index
@@ -97,7 +97,7 @@ class Unlimiformer(Generic[ModelType]):
         torch.cuda.empty_cache()
         if mode is True:
             self.break_out(self.model)
-            if self.knn_training:
+            if self.unlimiformer_training:
                 self.inject_training_hooks(self.model)
         self.original_model_train_func(mode)
         
@@ -105,7 +105,7 @@ class Unlimiformer(Generic[ModelType]):
         if self.hooks_injected:
             return
         # Inject our activation_capturer to capture the activations at every forward pass
-        attention_layers_to_capture = self.attention_layer_to_capture(self.knn_layer_begin, self.knn_layer_end)
+        attention_layers_to_capture = self.attention_layer_to_capture(self.layer_begin, self.layer_end)
         self.activation_capturer = []
         for layer in attention_layers_to_capture:
             if type(layer) is list:
@@ -121,11 +121,11 @@ class Unlimiformer(Generic[ModelType]):
                 self.activation_capturer.append(capturer)
 
         # Inject our main function after the main attention function
-        attention_layers_to_run = self.attention_op_to_run(self.knn_layer_begin, self.knn_layer_end)
+        attention_layers_to_run = self.attention_op_to_run(self.layer_begin, self.layer_end)
         for layer in attention_layers_to_run:
             self.register_hook(layer, self.attention_forward_hook)
 
-        decoder_layers_to_run = self.attention_layer_to_run(self.knn_layer_begin, self.knn_layer_end)
+        decoder_layers_to_run = self.attention_layer_to_run(self.layer_begin, self.layer_end)
         self.original_decoder_layer_cross_attn_forward_funcs = []
         for i, decoder_layer in enumerate(decoder_layers_to_run):
             self.original_decoder_layer_cross_attn_forward_funcs.append(self.cross_attention(decoder_layer).forward)
@@ -149,7 +149,7 @@ class Unlimiformer(Generic[ModelType]):
         # self.original_forward_func = model.forward
         model.forward = self.pre_forward_hook
 
-        decoder_layers_to_run = self.attention_layer_to_run(self.knn_layer_begin, self.knn_layer_end)
+        decoder_layers_to_run = self.attention_layer_to_run(self.layer_begin, self.layer_end)
         
         self.original_decoder_layer_self_attn_forward_funcs = []
         for decoder_layer in decoder_layers_to_run:
@@ -170,7 +170,7 @@ class Unlimiformer(Generic[ModelType]):
 
         self.inject_hooks_for_unaffected_layers(model, decoder_layers_to_run)
 
-        attention_layers_to_run = self.attention_op_to_run(self.knn_layer_begin, self.knn_layer_end)
+        attention_layers_to_run = self.attention_op_to_run(self.layer_begin, self.layer_end)
         for layer in attention_layers_to_run:
             self.register_hook(layer, self.train_attention_forward_hook)
 
@@ -300,7 +300,7 @@ class Unlimiformer(Generic[ModelType]):
         model.forward = self.original_forward_func
         model._reorder_cache = self.original_reorder_cache_func
 
-        decoder_layers_to_run = self.attention_layer_to_run(self.knn_layer_begin, self.knn_layer_end)
+        decoder_layers_to_run = self.attention_layer_to_run(self.layer_begin, self.layer_end)
         for decoder_layer, original_func in zip(decoder_layers_to_run, self.original_decoder_layer_cross_attn_forward_funcs):
             self.cross_attention(decoder_layer).forward = original_func
         self.hooks_injected = False
@@ -313,7 +313,7 @@ class Unlimiformer(Generic[ModelType]):
             h.remove()
         model.forward = self.original_forward_func
 
-        decoder_layers_to_run = self.attention_layer_to_run(self.knn_layer_begin, self.knn_layer_end)
+        decoder_layers_to_run = self.attention_layer_to_run(self.layer_begin, self.layer_end)
         for decoder_layer, original_func in zip(decoder_layers_to_run, self.original_decoder_layer_self_attn_forward_funcs):
             self.self_attention(decoder_layer).forward = original_func
         for decoder_layer, original_func in zip(decoder_layers_to_run, self.original_decoder_layer_cross_attn_forward_funcs):
@@ -541,7 +541,7 @@ class Unlimiformer(Generic[ModelType]):
                 # need to multiply by key vector
                 # query.view(query.shape[0], query.shape[1] * query.shape[2])
                 # k_proj in attention? 
-                attention_layer_list = self.attention_layer_to_capture(self.knn_layer_begin, self.knn_layer_end)
+                attention_layer_list = self.attention_layer_to_capture(self.layer_begin, self.layer_end)
                 k_proj_layer = [layers[0] for layers in attention_layer_list][self.cur_decoder_layer_index]
                 v_proj_layer = [layers[1] for layers in attention_layer_list][self.cur_decoder_layer_index]
                 

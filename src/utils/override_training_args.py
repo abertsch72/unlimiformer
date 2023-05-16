@@ -73,7 +73,6 @@ class TrainingOverridesArguments(Seq2SeqTrainingArguments):
         return self._ebs
 
     def apply_overrides(self, dataset_size):
-        # Uri:
         return
         
         if self.eval_steps_override == 0:

@@ -300,7 +300,7 @@ class DataTrainingArguments:
         default=None,
         metadata={"help": "if given, uses the test set ending at this index"},
     )
-    # Uri:
+
     patience: Optional[int] = field(
         default=None,
     )
@@ -329,7 +329,7 @@ class DataTrainingArguments:
             raise ValueError('When padding prefix, you must set a max_prefix_length')
         assert self.max_prefix_length == 0 or self.max_prefix_length <= 0.5*self.max_source_length,\
             'If max_prefix_length is given, it must be much shorter than the total input'
-        # Uri: 
+
         if self.eval_max_source_length is None:
             self.eval_max_source_length = self.max_source_length
 

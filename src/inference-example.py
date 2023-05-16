@@ -8,11 +8,13 @@ import torch
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# example using govreport
-modelname = "abertsch/unlimiformer-bart-govreport-alternating"
-dataset = load_dataset("urialon/gov_report_validation")
+# example: insert your dataset and model here
+modelname = "facebook/bart-base"
+datasetname = "ccdv/govreport-summarization"
 
-tokenizer = AutoTokenizer.from_pretrained("facebook/bart-base")
+dataset = load_dataset(datasetname)
+
+tokenizer = AutoTokenizer.from_pretrained(modelname)
 model = BartForConditionalGeneration.from_pretrained(modelname)
 
 example_input = dataset['validation'][0]['input']

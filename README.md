@@ -17,7 +17,31 @@ You'll need to set values for the Unlimiformer-specific arguments outlined in ``
 ```run.py``` is an example of a full training setup that integrates Unlimiformer, adopted from [SLED](https://github.com/Mivg/SLED) -- this is likely more complex than you will need. 
 
 ## Trained models
-Trained models from the paper will be made available on HuggingFace.
+Trained models from the paper will be made available on HuggingFace. Please note that you must add the Unlimiformer-specific files to your repository, and load these models with ```knn=True```. *If you download these models from Hugging Face, they may not use Unlimiformer by default!* 
+
+### Table 3: low-cost training methods
+| Dataset  |  Method | Hugging Face link |
+| ------------- | ------------- | ------------- |
+| GovReport | Baseline: BART-base  | <anonymized>  |
+| GovReport  | BART-base + Unlimiformer early stopping  | <anonymized> |
+| SummScreen | Baseline: BART-base  | <anonymized> |
+| SummScreen  | BART-base + Unlimiformer early stopping  | <anonymized>  |
+
+
+### Table 4: Long-range training methods
+| Dataset  |  Method | Hugging Face link |
+| ------------- | ------------- | ------------- |
+| GovReport | BART + Unlimiformer (alternating training)  | <anonymized>  |
+| SummScreen | BART + Unlimiformer (retrieval training)  | <anonymized> |
+
+## Table 5: BookSum
+| Dataset  |  Method | Hugging Face link |
+| ------------- | ------------- | ------------- |
+| BookSum | Baseline: BART-base  | <anonymized>  |
+| BookSum  | BART-base + Unlimiformer early stopping  | <anonymized> |
+| Booksum  | BART-base + Unlimiformer (random-encoding training)  | <anonymized>  |
+| Booksum  | BART-base + Unlimiformer (alternating training)  | <anonymized>  |
+
 
 ## Recommended settings
 

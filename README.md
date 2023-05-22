@@ -1,20 +1,29 @@
 # Unlimiformer
 ![image](https://user-images.githubusercontent.com/42593540/236538293-1d5fdfe3-3e34-4979-9611-a9c9f56e3a00.png)
 
-This is the official implementation of the paper [Unlimiformer: Long-Range Transformers with Unlimited Length Input](https://arxiv.org/abs/2305.01625).
+This is the official implementation of the paper:
 
-Unlimiformer is a method for augmenting pretrained encoder-decoder models with a type of retrieval-based attention. This allows the use of unlimited length inputs with any pretrained encoder-decoder!
+[Amanda Bertsch](https://www.cs.cmu.edu/~abertsch/), [Uri Alon](https://urialon.ml/), [Graham Neubig](http://www.phontron.com/), and [Matthew R. Gormley](http://www.cs.cmu.edu/~mgormley/):   
+[Unlimiformer: Long-Range Transformers with Unlimited Length Input](https://arxiv.org/abs/2305.01625)
 
-Unlimiformer can be used to improve performance of an already-trained model. However, for best results, the model should be trained with Unlimiformer. 
+Unlimiformer is a method for augmenting pretrained encoder-decoder models with retrieval-based attention, without changing the mathematical definition of attention. 
+This allows the use of unlimited length inputs with any pretrained encoder-decoder!  
+See also our [**Tweet**](https://twitter.com/abertsch72/status/1654110919977324545?s=20).
+
+Unlimiformer can be used to improve performance of an already-trained model. For best results, the model can be trained with Unlimiformer training. 
+
+Please let us know if anything here is not working as expected, and feel free to create [new issues](/issues) with any questions.
 
 ## Getting Started
-Paste the files from ```src``` into your source code folder.
 
-You'll need to set values for the Unlimiformer-specific arguments outlined in ```usage.py```-- you can add these arguments wherever you usually process hyperparameters. To use the model, you must set ```test_unlimiformer=True```. For datastore usage, the model must be in evaluation model (e.g. call ```model.eval()``` before inference). 
+### General Instructions
+Copy the files from `src` into your source code folder.
 
-```inference-example.py``` outlines a minimal example for running a sequence through an Unlimiformer model, using the default arguments. 
+You'll need to set values for the Unlimiformer-specific arguments outlined in [`usage.py`](blob/main/src/usage.py)-- you can add these arguments wherever you usually process hyperparameters. To use the model, you must set `test_unlimiformer=True`. For datastore usage, the model must be in evaluation model (e.g. call ```model.eval()``` before inference). 
 
-```run.py``` is an example of a full training setup that integrates Unlimiformer, adopted from [SLED](https://github.com/Mivg/SLED) -- this is likely more complex than you will need. 
+[`inference-example.py`](blob/main/src/usage.py) outlines a minimal example for running a sequence through an Unlimiformer model, using the default arguments. 
+
+[`run.py`](blob/main/src/run.py) is an example of a full training setup that integrates Unlimiformer, adopted from [SLED](https://github.com/Mivg/SLED). See full command lines below.
 
 ## Trained models
 The following models from the paper are available on Hugging Face. Please note that you must add the Unlimiformer-specific files to your repository, and load these models with ```knn=True```. *If you download these models from Hugging Face, they may not use Unlimiformer by default!* 
@@ -65,6 +74,7 @@ See Table 5 in the paper for a more detailed breakdown of relative training cost
 ### For evaluation (including early stopping)
 * if you're consistently running out of CUDA memory, set ```use_datastore=True``` to use a Faiss datastore to store hidden states.
 * if you're still having issues, set ```gpu_datastore=False``` or ```gpu_index=False```, but note that this will degrade performance
+
 
 ## Citation
 If you use our method or models, please cite [our paper](https://arxiv.org/abs/2305.01625):

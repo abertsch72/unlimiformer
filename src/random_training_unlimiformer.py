@@ -10,10 +10,9 @@ from transformers import BartModel, BartForConditionalGeneration, \
     AutoModelForSeq2SeqLM
 
 class RandomTrainingUnlimiformer(Unlimiformer[ModelType]):
-    def __init__(self, model: ModelType, random_knn_initial_inputs=False, *args, **kwargs):
+    def __init__(self, model: ModelType, *args, **kwargs):
         super().__init__(model, *args, **kwargs)
         self.training_hooks_injected = False
-        self.random_knn_initial_inputs = random_knn_initial_inputs
         self.train_step = 0
 
     @classmethod
@@ -29,7 +28,7 @@ class RandomTrainingUnlimiformer(Unlimiformer[ModelType]):
             LEDForConditionalGeneration: RandomUnlimiformerLED,
         }
         type_to_class[type(model_clone)](model_clone, *args, **kwargs)
-        return model
+        return model_clone
 
     def pre_eval_hook(self):
         self.remove_training_hooks(self.model)
@@ -43,7 +42,7 @@ class RandomTrainingUnlimiformer(Unlimiformer[ModelType]):
         if mode is True:
             self.break_out(self.model)
             self.remove_training_hooks(self.model)
-            if self.knn_training and self.train_step % 2 == 0:
+            if self.unlimiformer_training and self.train_step % 2 == 0:
                 super().inject_training_hooks(self.model)
             else:
                 self.inject_training_hooks(self.model)
@@ -56,7 +55,7 @@ class RandomTrainingUnlimiformer(Unlimiformer[ModelType]):
         # self.original_forward_func = model.forward
         model.forward = self.random_inputs_forward_hook
 
-        decoder_layers_to_run = self.attention_layer_to_run(self.knn_layer_begin, self.knn_layer_end)
+        decoder_layers_to_run = self.attention_layer_to_run(self.layer_begin, self.layer_end)
         
         self.original_decoder_layer_self_attn_forward_funcs = []
         for decoder_layer in decoder_layers_to_run:
@@ -162,11 +161,11 @@ class RandomTrainingUnlimiformer(Unlimiformer[ModelType]):
         self.long_inputs_encoded, self.long_inputs_mask = self.chunked_encode_input(input_ids=input_ids, attention_mask=attention_mask)
 
         #  TODO: should the inputs be sampled or the truncated beginning?
-        if self.random_knn_initial_inputs:
-            encoded_inputs, encoded_inputs_mask = self.sample_long_input(self.long_inputs_encoded, self.long_inputs_mask)
-        else:
-            encoded_inputs = self.long_inputs_encoded[:, :self.actual_model_window_size]
-            encoded_inputs_mask = self.long_inputs_mask[:, :self.actual_model_window_size]
+        # if self.random_knn_initial_inputs:
+        #     encoded_inputs, encoded_inputs_mask = self.sample_long_input(self.long_inputs_encoded, self.long_inputs_mask)
+        # else:
+        encoded_inputs = self.long_inputs_encoded[:, :self.actual_model_window_size]
+        encoded_inputs_mask = self.long_inputs_mask[:, :self.actual_model_window_size]
         return self.original_forward_func(encoder_outputs=(encoded_inputs, ), labels=labels, attention_mask=encoded_inputs_mask, **kwargs)
 
     def sample_long_input(self, long_inputs_encoded, long_inputs_mask, random_indices=None):

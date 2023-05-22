@@ -74,8 +74,6 @@ class Unlimiformer(Generic[ModelType]):
             self.head_nums = Ellipsis # torch.arange(0, self.num_heads, device=self.device)
         else:
             self.head_nums = self.specific_head
-        # Save a reference to the wrapper
-        model.knn_wrapper = self
         self.hooks_injected = False
         self.training_hooks_injected = False
         self.original_forward_func = model.forward

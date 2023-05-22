@@ -75,6 +75,12 @@ See Table 5 in the paper for a more detailed breakdown of relative training cost
 * if you're consistently running out of CUDA memory, set ```use_datastore=True``` to use a Faiss datastore to store hidden states.
 * if you're still having issues, set ```gpu_datastore=False``` or ```gpu_index=False```, but note that this will degrade performance
 
+## Results
+<img width="50%" alt="image" src="https://github.com/abertsch72/unlimiformer/assets/15002544/b800416e-a982-4d8c-8496-0dc1e1c1bfe5">
+<img width="50%" alt="image" src="https://github.com/abertsch72/unlimiformer/assets/15002544/f1d74abc-45fd-4a2e-97ae-bdd95f2df9d3">
+<img width="50%" alt="image" src="https://github.com/abertsch72/unlimiformer/assets/15002544/5b298599-3d55-4458-bdbe-5ec01696f68f">
+
+
 
 ## Citation
 If you use our method or models, please cite [our paper](https://arxiv.org/abs/2305.01625):

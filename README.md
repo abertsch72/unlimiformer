@@ -27,9 +27,56 @@ You'll need to set values for the Unlimiformer-specific arguments outlined in [`
 
 ### Reproducing the Experiments from the Paper - Command Lines
 
+To run a standard finetuning + evaluation of BART-base on the GovReport dataset (as examples), use:
+```python
+python src/run.py \
+    src/configs/model/bart_base_sled.json 
+    src/configs/training/base_training_args.json \
+    src/configs/data/gov_report.json \
+    --output_dir output_train_bart_base_local/ \
+    --learning_rate 1e-5 \
+    --model_name_or_path facebook/bart-base \
+    --max_source_length 1024 \
+    --eval_max_source_length 1024 --do_eval=True \
+    --eval_steps 1000 --save_steps 1000 \
+    --per_device_eval_batch_size 1 --per_device_train_batch_size 2 \
+    --extra_metrics bertscore
+```
+
+* To use Unlimiformer at **test**/validation time, use also: `--test_unlimiformer --eval_max_source_length 999999`
+* To use Unlimiformer at **training** time (called "Retrieval training" in the paper), use: `--unlimiformer_training --max_source_length 16384`
+* Alternatively, to use the computationally cheaper "Random-encoded" at **training** time, use `--random_unlimiformer_training --max_source_length 16384`
+* To altenate between "retrieval training" and "random-encoded training", use both flags: `--unlimiformer_training --random_unlimiformer_training --max_source_length 16384`
+
+For additional flags and options, see [`usage.py`](https://github.com/abertsch72/unlimiformer/blob/main/src/usage.py)
+
+
+## Recommended settings
+
+### To evaluate with Unlimiformer
+At evaluation time, we recommend the default value for each setting. 
+
+### To train with Unlimiformer
+For an inexpensive method, we recommend training as usual and using Unlimiformer during early stopping. To do so, set ```knn=True``` and leave all other values at default.
+
+
+For best performance, there are 3 expensive settings for training. The best one varies by dataset.
+1. Set ```random_unlimiformer_training=True```: this is the *random-encoded training* setting from the paper
+2. Set ```unlimiformer_training=True```: this is the *retrieval training* setting from the paper
+3. Set ```random_unlimiformer_training=True``` AND ```unlimiformer_training=True```: this is the *alternating training* setting from the paper
+
+See Table 5 in the paper for a more detailed breakdown of relative training costs. 
+
+## Tips for very large inputs
+### For training
+* you may need to truncate your inputs at training time, e.g. to 8k or 16k tokens. You can use the full inputs at evaluation time
+* you can also try splitting your inputs into 16k-token-chunks and training on each one as its own example
+### For evaluation (including early stopping)
+* if you're consistently running out of CUDA memory, set ```use_datastore=True``` to use a Faiss datastore to store hidden states.
+* if you're still having issues, set ```gpu_datastore=False``` or ```gpu_index=False```, but note that this will degrade performance
 
 ## Trained models
-The following models from the paper are available on Hugging Face. Please note that you must add the Unlimiformer-specific files to your repository, and load these models with ```knn=True```. *If you download these models from Hugging Face, they may not use Unlimiformer by default!* 
+The following models from the paper are available on Hugging Face. Please note that you must add the Unlimiformer-specific files to your repository, and load these models with ```test_unlimiformer=True```. *If you download these models from Hugging Face, they may not use Unlimiformer by default!* 
 
 ### Table 3: low-cost training methods
 | Dataset  |  Method | Hugging Face link |
@@ -53,30 +100,6 @@ The following models from the paper are available on Hugging Face. Please note t
 | BookSum  | BART-base + Unlimiformer early stopping  | [abertsch/unlimiformer-bart-booksum-earlyk](https://huggingface.co/abertsch/unlimiformer-bart-booksum-earlyk) |
 | Booksum  | BART-base + Unlimiformer (random-encoding training)  | [abertsch/unlimiformer-bart-booksum-random-encoding](https://huggingface.co/abertsch/unlimiformer-bart-booksum-random-encoding)  |
 | Booksum  | BART-base + Unlimiformer (alternating training)  | [abertsch/unlimiformer-bart-booksum-alternating](https://huggingface.co/abertsch/unlimiformer-bart-booksum-alternating)  |
-
-## Recommended settings
-
-### To evaluate with Unlimiformer
-At evaluation time, we recommend the default value for each setting. 
-
-### To train with Unlimiformer
-For an inexpensive method, we recommend training as usual and using Unlimiformer during early stopping. To do so, set ```knn=True``` and leave all other values at default.
-
-
-For best performance, there are 3 expensive settings for training. The best one varies by dataset.
-1. Set ```random_unlimiformer_training=True```: this is the *random-encoded training* setting from the paper
-2. Set ```unlimiformer_training=True```: this is the *approximate-retrieval training* setting from the paper
-3. Set ```random_unlimiformer_training=True``` AND ```unlimiformer_training=True```: this is the *alternating training* setting from the paper
-
-See Table 5 in the paper for a more detailed breakdown of relative training costs. 
-
-## Tips for very large inputs
-### For training
-* you may need to truncate your inputs at training time, e.g. to 8k or 16k tokens. You can use the full inputs at evaluation time
-* you can also try splitting your inputs into 16k-token-chunks and training on each one as its own example
-### For evaluation (including early stopping)
-* if you're consistently running out of CUDA memory, set ```use_datastore=True``` to use a Faiss datastore to store hidden states.
-* if you're still having issues, set ```gpu_datastore=False``` or ```gpu_index=False```, but note that this will degrade performance
 
 ## Results
 

@@ -943,7 +943,7 @@ def _get_dataset(data_args, model_args, training_args):
     seq2seq_dataset = load_dataset(
         data_args.dataset_name,
         data_args.dataset_config_name,
-        ignore_verifications=True,
+        verification_mode='no_checks',
         cache_dir=model_args.cache_dir,
         data_dir=data_args.data_dir,
         data_files=data_files,

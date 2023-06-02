@@ -6,7 +6,9 @@ from enum import Enum, auto
 from transformers import BartModel, BartForConditionalGeneration, \
     T5Model, T5ForConditionalGeneration, \
     LEDModel, LEDForConditionalGeneration, \
-    AutoModelForSeq2SeqLM
+    AutoModelForCausalLM, AutoModelForSeq2SeqLM, \
+    LlamaModel, LlamaForCausalLM, \
+    MODEL_WITH_LM_HEAD_MAPPING, MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING
 
 from typing import TypeVar, Generic
 
@@ -19,7 +21,7 @@ ModelType = TypeVar('ModelType')
 class Unlimiformer(Generic[ModelType]):
     def __init__(self, model: ModelType, 
             layer_begin=-1, layer_end=None,
-            unlimiformer_head_num=None, normalize=False, 
+            unlimiformer_head_num=None, 
             exclude_attention=False, 
             model_encoder_max_len=None,
             chunk_overlap=0,
@@ -33,7 +35,6 @@ class Unlimiformer(Generic[ModelType]):
         self.layer_begin = layer_begin
         self.layer_end = layer_end
         self.specific_head = unlimiformer_head_num
-        self.normalize = normalize
         self.exclude_attention = exclude_attention
         self.actual_model_window_size = None
         self.model_encoder_max_len = model_encoder_max_len
@@ -84,6 +85,8 @@ class Unlimiformer(Generic[ModelType]):
         self.original_model_train_func = model.train
         model.train = self.pre_train_hook
 
+        model.eval()
+
     def pre_eval_hook(self):
         self.remove_training_hooks(self.model)
         self.inject_hooks(self.model)
@@ -115,7 +118,7 @@ class Unlimiformer(Generic[ModelType]):
                 self.activation_capturer.append(layer_capturers)
             else:
                 capturer = ActivationCapturer(layer, capture_input=False)
-                self.register_hook(attention_layers_to_capture, capturer)
+                self.register_hook(layer, capturer)
                 self.activation_capturer.append(capturer)
 
         # Inject our main function after the main attention function
@@ -328,8 +331,13 @@ class Unlimiformer(Generic[ModelType]):
 
     def reset_memory(self, input_ids, attention_mask):
         if self.use_datastore:
-            self.datastore = DatastoreBatch(dim=self.model.config.hidden_size, batch_size=input_ids.shape[0], flat_index=self.flat_index, gpu_index=self.gpu_index)
-            self.embeddings = []
+            if self.is_encoder_decoder:
+                self.datastore = [DatastoreBatch(dim=self.model.config.hidden_size, batch_size=input_ids.shape[0], flat_index=self.flat_index, gpu_index=self.gpu_index)]
+                self.hidden_states = [[]]
+            else:
+                self.datastore = [DatastoreBatch(dim=self.model.config.hidden_size, batch_size=input_ids.shape[0], flat_index=self.flat_index, gpu_index=self.gpu_index) 
+                    for _ in range(self.model.config.num_hidden_layers)]
+                self.hidden_states = [[] for _ in range(model.config.num_hidden_layers)]
             torch.cuda.empty_cache()
         self.prompt_input_ids = input_ids
         self.input_ids = torch.tensor([], dtype=torch.long, device=input_ids.device)
@@ -338,7 +346,10 @@ class Unlimiformer(Generic[ModelType]):
         self.last_beam_idx = None
         self.cur_layer_key_value_placeholder = None
         self.is_input_encoding_pass = True
-        dummy_labels = torch.zeros((input_ids.shape[0], 1), dtype=torch.long, device=input_ids.device)
+        if self.is_encoder_decoder:
+            dummy_labels = torch.zeros((input_ids.shape[0], 1), dtype=torch.long, device=input_ids.device)
+        else:
+            dummy_labels = None
         if self.save_heatmap:
             if self.heatmap is not None:
                 print(f'Generated: {self.tokenizer.decode(self.generated_input_ids[0])}')
@@ -346,27 +357,32 @@ class Unlimiformer(Generic[ModelType]):
             self.heatmap = torch.tensor([], dtype=torch.float, device=input_ids.device)
         self.generated_input_ids = torch.tensor([], dtype=torch.long, device=input_ids.device)
 
-        self.prompt_keys = []
-        self.prompt_values = []
+        self.prompt_keys = [[] for _ in range(self.model.config.num_hidden_layers)]
+        self.prompt_values = [[] for _ in range(self.model.config.num_hidden_layers)]
         self.prompt_attention_mask = []
         window_indices = self.window_indices(input_ids.shape[-1])
 
         for context_start_ind, context_end_ind, update_start_ind, update_end_ind in window_indices:
             chunk = input_ids[:, context_start_ind:context_end_ind]
             chunk_attention_mask = attention_mask[:, context_start_ind:context_end_ind]
-            hidden_states = self.model(chunk, attention_mask=chunk_attention_mask, labels=dummy_labels, return_dict=True)
-            last_hidden = hidden_states.encoder_last_hidden_state # (batch, chunked_source_len, dim)
+            hidden_states = self.model(chunk, attention_mask=chunk_attention_mask, labels=dummy_labels, return_dict=True, output_hidden_states=True)
+            if self.is_encoder_decoder:
+                hidden_states_to_index = [hidden_states.encoder_last_hidden_state] # list of length 1 of (batch, chunked_source_len, dim)
+            else:
+                hidden_states_to_index = list(hidden_states.hidden_states)[:-1] # list of len num_layers of (batch, chunked_source_len, dim)
             if self.use_datastore:
-                to_add = last_hidden[:, update_start_ind:update_end_ind].detach()
+                to_add = [state[:, update_start_ind:update_end_ind].detach() for state in hidden_states_to_index]
                 to_apply_mask = chunk_attention_mask[:, update_start_ind:update_end_ind]
                 if not self.reconstruct_embeddings:
                     to_add_embeddings = to_add
                     if not self.gpu_datastore:
-                        to_add_embeddings = to_add_embeddings.cpu()
-                    self.embeddings.append(to_add_embeddings)
-                # list of len batch, each item is (masked_time, dim)
-                to_add = [key[mask.bool()] for key, mask in zip(to_add, to_apply_mask)]
-                self.datastore.add_keys(to_add)
+                        to_add_embeddings = [states.cpu() for states in to_add_embeddings]
+                    for i, layer_states in enumerate(to_add_embeddings):
+                        self.hidden_states[i].append(to_add_embeddings)
+                # list of len layers, inside it there is a list of len batch, each item is (masked_time, dim)
+                for i, to_add_layer in enumerate(to_add):
+                    keys = [key[mask.bool()] for key, mask in zip(to_add_layer, to_apply_mask)]
+                    self.datastore[i].add_keys(keys)
             if (not self.use_datastore) or self.test_datastore:
                 layers_kv = [
                     self.process_key_value(layer_capturer) # (batch, head, time, dim)
@@ -378,25 +394,27 @@ class Unlimiformer(Generic[ModelType]):
                 value = [layer[1][:, :, update_start_ind:update_end_ind] for layer in layers_kv]
                 chunk_attention_mask = chunk_attention_mask[:, update_start_ind:update_end_ind] # (batch, chunked_time)
 
-                key = torch.stack(key, dim=0) # (num_layers, batch, head, time, dim)
-                value = torch.stack(value, dim=0) # (num_layers, batch, head, time, dim)
+                # key = torch.stack(key, dim=0) # (num_layers, batch, head, time, dim)
+                # value = torch.stack(value, dim=0) # (num_layers, batch, head, time, dim)
 
-                self.prompt_keys.append(key) # (num_layers, batch, head, chunked_source_len, dim)
-                self.prompt_values.append(value) # (num_layers, batch, head, chunked_source_len, dim)
+                for i, (layer_key, layer_value) in enumerate(zip(key, value)):
+                    self.prompt_keys[i].append(layer_key) # (num_layers, batch, head, chunked_source_len, dim)
+                    self.prompt_values[i].append(layer_value) # (num_layers, batch, head, chunked_source_len, dim)
                 self.prompt_attention_mask.append(chunk_attention_mask) # (batch, chunked_source_len)
         
         if self.use_datastore:
             # keys are all in datastore already!
             if not self.reconstruct_embeddings:
-                self.embeddings = torch.cat(self.embeddings, axis=1)
-            self.datastore.train_index()
+                self.hidden_states = [torch.cat(layer_hidden_states, axis=1) for layer_hidden_states in self.hidden_states]
+            for datastore in self.datastore:
+                datastore.train_index()
         if (not self.use_datastore) or self.test_datastore:
-            self.prompt_keys = torch.cat(self.prompt_keys, dim=-2) # (num_layers, batch, head, source_len, dim)
-            self.prompt_values = torch.cat(self.prompt_values, dim=-2) # (num_layers, batch, head, source_len, dim)
+            for i, (layer_keys, layer_values) in enumerate(zip(self.prompt_keys, self.prompt_values)):
+                self.prompt_keys[i] = torch.cat(layer_keys, dim=-2)
+                self.prompt_values[i] = torch.cat(layer_values, dim=-2)
+            # self.prompt_keys = torch.cat(self.prompt_keys, dim=-2) # (num_layers, batch, head, source_len, dim)
+            # self.prompt_values = torch.cat(self.prompt_values, dim=-2) # (num_layers, batch, head, source_len, dim)
             self.prompt_attention_mask = torch.cat(self.prompt_attention_mask, dim=-1) # (batch, source_len)
-
-        if self.normalize:
-            self.prompt_keys = torch.nn.functional.normalize(self.prompt_keys, dim=-1)
 
         self.is_input_encoding_pass = False
         if self.verbose:
@@ -469,6 +487,8 @@ class Unlimiformer(Generic[ModelType]):
             return results
 
     def pre_generate_hook(self, input_ids, **kwargs):
+        if 'attention_mask' not in kwargs:
+            kwargs['attention_mask'] = torch.ones_like(input_ids)
         self.reset_memory(input_ids, kwargs['attention_mask'])
         new_kwargs = kwargs
         if 'attention_mask' in kwargs:
@@ -478,7 +498,7 @@ class Unlimiformer(Generic[ModelType]):
         return self.original_generate_func(input_ids[:, :self.actual_model_window_size], **new_kwargs)
 
     def pre_forward_hook(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
-        self.model.base_model.decoder.gradient_checkpointing = False
+        self.set_gradient_checkpointing(False)
         if not self.is_input_encoding_pass:
             if self.model.training:
                 # self.reset_memory(input_ids, attention_mask)
@@ -509,9 +529,9 @@ class Unlimiformer(Generic[ModelType]):
                 self.cur_layer_key_value_placeholder = \
                     kwargs['past_key_value'] = list(kwargs['past_key_value']) # (batch, head, time, attn_dim)
 
+            batch_size, tgt_len, dim = hidden_states.shape
             if self.model.training:
                 # from: (batch, tgt_len, dim) to: (batch * tgt_len, 1, dim)
-                batch_size, tgt_len, dim = hidden_states.shape
                 hidden_states = hidden_states.reshape(-1, 1, hidden_states.shape[-1])
                 # from: (batch, 1, tgt_len, dim) to: (batch * tgt_len, 1, 1, dim)
                 attention_mask = attention_mask.reshape(-1, 1, 1, attention_mask.shape[-1])
@@ -520,7 +540,17 @@ class Unlimiformer(Generic[ModelType]):
                 attn_output = attn_output.reshape(batch_size, tgt_len, dim)
                 return attn_output, attn_weights_reshaped, past_key_value
             else:
-                return original_cross_attn_forward_func(hidden_states=hidden_states, attention_mask=attention_mask, *args, **kwargs)
+                attn_output, attn_weights_reshaped, past_key_value = original_cross_attn_forward_func(hidden_states=hidden_states, attention_mask=attention_mask, *args, **kwargs)
+                if self.is_encoder_decoder and not self.is_input_encoding_pass and \
+                        past_key_value[0].shape[2] > self.prompt_keys[self.cur_decoder_layer_index].shape[2]:
+                    self.prompt_keys[self.cur_decoder_layer_index] = torch.cat([self.prompt_keys[self.cur_decoder_layer_index], past_key_value[0][:,:,-1:]], dim=-2)
+                    self.prompt_values[self.cur_decoder_layer_index] = torch.cat([self.prompt_values[self.cur_decoder_layer_index], past_key_value[1][:,:,-1:]], dim=-2)
+                    
+                    if self.cur_decoder_layer_index == self.model.config.num_hidden_layers - 1:
+                        self.prompt_attention_mask = torch.cat([
+                            self.prompt_attention_mask, 
+                            torch.ones([self.prompt_attention_mask.shape[0], 1], dtype=self.prompt_attention_mask.dtype).to(self.device)], dim=-1)
+                return attn_output, attn_weights_reshaped, past_key_value
         
         return attention_pre_forward_hook
 
@@ -531,8 +561,6 @@ class Unlimiformer(Generic[ModelType]):
         with torch.no_grad():
             query = self.process_query(output)[:,-1] # (batch * beam, head, dim)
             query = query[:, self.head_nums] # (batch * beam, head, dim)
-            if self.normalize:
-                query = torch.nn.functional.normalize(query, dim=-1)
 
             if self.use_datastore:
                 # query: (batch, beam, head, dim)
@@ -559,8 +587,8 @@ class Unlimiformer(Generic[ModelType]):
                     # self.embeddings: (batch,              src_len, dim)
                     # indices:         (batch, beam * head, actual_model_window_size)
                     # embeddings: (batch, beam * head, actual_model_window_size, dim)
-                    embeddings = torch.take_along_dim(input=self.embeddings.unsqueeze(1), 
-                        indices=top_search_key_indices.unsqueeze(-1).to(self.embeddings.device), dim=-2)
+                    embeddings = torch.take_along_dim(input=self.hidden_states.unsqueeze(1), 
+                        indices=top_search_key_indices.unsqueeze(-1).to(self.hidden_states.device), dim=-2)
                     embeddings = embeddings.to(self.device)
                 # (batch, beam, head, actual_model_window_size)
                 top_search_key_scores = top_search_key_scores.reshape((self.datastore.batch_size, -1, self.num_heads, self.actual_model_window_size))
@@ -654,9 +682,7 @@ class Unlimiformer(Generic[ModelType]):
         with torch.no_grad():
             query = self.process_query(output) # (batch * beam, tgt_len, head, dim)
             # query = query[:, :, self.head_nums] # (batch * beam, head, dim)
-            if self.normalize:
-                query = torch.nn.functional.normalize(query, dim=-1)
-
+            
             # query: (batch * beam, tgt_len, head, dim)
             batch_size = this_layer_prompt_keys.shape[0]
             tgt_len = query.shape[0] // batch_size
@@ -690,6 +716,8 @@ class Unlimiformer(Generic[ModelType]):
         self.cur_layer_key_value_placeholder[1] = new_values.flatten(0, 1).squeeze(2)
         return
 
+    def set_gradient_checkpointing(self, value):
+        self.model.base_model.decoder.gradient_checkpointing = value
 
     def reorder_cache_hook(self, past, beam_idx):
         self.last_beam_idx = beam_idx
@@ -703,7 +731,14 @@ class Unlimiformer(Generic[ModelType]):
     
     @classmethod
     def convert_model(cls, model, *args, **kwargs):
-        model_clone = AutoModelForSeq2SeqLM.from_config(model.config)
+        # if type(model.config) in MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING:
+        # elif type(model.config) in MODEL_WITH_LM_HEAD_MAPPING:
+        # else:
+        #     raise ValueError(f'Unsupported model type: {type(model.config)}')
+        if model.config.is_encoder_decoder:
+            model_clone = AutoModelForSeq2SeqLM.from_config(model.config)
+        else:
+            model_clone = AutoModelForCausalLM.from_config(model.config)
         model_clone.load_state_dict(model.state_dict())
         type_to_class = {
             BartModel: UnlimiformerBART,
@@ -712,6 +747,8 @@ class Unlimiformer(Generic[ModelType]):
             T5ForConditionalGeneration: UnlimiformerT5,
             LEDModel: UnlimiformerLED,
             LEDForConditionalGeneration: UnlimiformerLED,
+            LlamaModel: UnlimiformerLLaMa,
+            LlamaForCausalLM: UnlimiformerLLaMa,
         }
         type_to_class[type(model_clone)](model_clone, *args, **kwargs)
         return model_clone
@@ -907,6 +944,57 @@ class UnlimiformerLED(UnlimiformerBART):
 
     def window_size(self):
         return self.model.config.max_encoder_position_embeddings
+
+class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
+    def __init__(self, model: LlamaModel, *args, **kwargs):
+        super().__init__(model, *args, **kwargs)
+    
+    def attention_layer_to_capture(self, layer_begin, layer_end): 
+        return [
+            [layer.self_attn.k_proj, layer.self_attn.v_proj]
+            for layer in self.model.base_model.layers[layer_begin:layer_end]
+        ]
+
+    def attention_op_to_run(self, layer_begin, layer_end):
+        return [
+            layer.self_attn.q_proj
+                for layer in self.model.base_model.layers[layer_begin:layer_end]
+        ]
+
+    def attention_layer_to_run(self, layer_begin, layer_end): 
+        return self.model.base_model.layers[layer_begin:layer_end]
+
+    def self_attention(self, decoder_layer):
+        return decoder_layer.self_attn 
+
+    def cross_attention(self, decoder_layer):
+        return decoder_layer.self_attn
+    
+    def window_size(self):
+        return self.model.config.max_position_embeddings
+    
+    def set_gradient_checkpointing(self, value):
+        self.model.base_model.gradient_checkpointing = value
+
+    def process_key_value(self, capturers):
+        key_capturer, value_capturer = capturers
+        # (batch, time, heads * attn_dim)
+        key, value = key_capturer.captured, value_capturer.captured
+        attention = self.model.base_model.layers[-1].self_attn
+
+        # (batch, heads, time, attn_dim)
+        key = key.view(key.shape[0], -1, attention.num_heads, attention.head_dim).transpose(1, 2).contiguous()
+        value = value.view(value.shape[0], -1, attention.num_heads, attention.head_dim).transpose(1, 2).contiguous()
+        
+        return key, value
+    
+    def process_query(self, output):
+        # output: (batch, time, heads * attn_dim)
+        attention = self.model.base_model.layers[-1].self_attn
+        
+        # query: (batch, time, heads, attn_dim)
+        query = output.view(output.shape[0], output.shape[1], attention.num_heads, attention.head_dim).contiguous()
+        return query
 
 class ActivationCapturer(nn.Module):
     def __init__(self, layer, capture_input=False):

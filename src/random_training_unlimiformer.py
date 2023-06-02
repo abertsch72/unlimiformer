@@ -17,8 +17,8 @@ class RandomTrainingUnlimiformer(Unlimiformer[ModelType]):
 
     @classmethod
     def convert_model(cls, model, *args, **kwargs):
-        model_clone = AutoModelForSeq2SeqLM.from_config(model.config)
-        model_clone.load_state_dict(model.state_dict()).to(args.device)
+        # model_clone = AutoModelForSeq2SeqLM.from_config(model.config)
+        # model_clone.load_state_dict(model.state_dict()).to(args.device)
         type_to_class = {
             BartModel: RandomUnlimiformerBART,
             BartForConditionalGeneration: RandomUnlimiformerBART,
@@ -27,8 +27,8 @@ class RandomTrainingUnlimiformer(Unlimiformer[ModelType]):
             LEDModel: RandomUnlimiformerLED,
             LEDForConditionalGeneration: RandomUnlimiformerLED,
         }
-        type_to_class[type(model_clone)](model_clone, *args, **kwargs)
-        return model_clone
+        type_to_class[type(model)](model, *args, **kwargs)
+        return model
 
     def pre_eval_hook(self):
         self.remove_training_hooks(self.model)

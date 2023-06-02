@@ -735,11 +735,11 @@ class Unlimiformer(Generic[ModelType]):
         # elif type(model.config) in MODEL_WITH_LM_HEAD_MAPPING:
         # else:
         #     raise ValueError(f'Unsupported model type: {type(model.config)}')
-        if model.config.is_encoder_decoder:
-            model_clone = AutoModelForSeq2SeqLM.from_config(model.config)
-        else:
-            model_clone = AutoModelForCausalLM.from_config(model.config)
-        model_clone.load_state_dict(model.state_dict()).to(args.device)
+        # if model.config.is_encoder_decoder:
+        #     model_clone = AutoModelForSeq2SeqLM.from_config(model.config)
+        # else:
+        #     model_clone = AutoModelForCausalLM.from_config(model.config)
+        # model_clone.load_state_dict(model.state_dict()).to(args.device)
         type_to_class = {
             BartModel: UnlimiformerBART,
             BartForConditionalGeneration: UnlimiformerBART,
@@ -750,8 +750,8 @@ class Unlimiformer(Generic[ModelType]):
             LlamaModel: UnlimiformerLLaMa,
             LlamaForCausalLM: UnlimiformerLLaMa,
         }
-        type_to_class[type(model_clone)](model_clone, *args, **kwargs)
-        return model_clone
+        type_to_class[type(model)](model, *args, **kwargs)
+        return model
         
 
     def plot_heatmap(self, data, xticklabels='auto', yticklabels='auto'):

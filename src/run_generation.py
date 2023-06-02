@@ -432,7 +432,7 @@ def main():
     model_kwargs = {}
     if args.num_hidden_layers is not None:
         model_kwargs["num_hidden_layers"] = args.num_hidden_layers
-    model = model_class.from_pretrained(args.model_name_or_path, **kwargs)
+    model = model_class.from_pretrained(args.model_name_or_path, **model_kwargs)
     model.to(args.device)
 
     if args.fp16:

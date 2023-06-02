@@ -18,7 +18,7 @@ class RandomTrainingUnlimiformer(Unlimiformer[ModelType]):
     @classmethod
     def convert_model(cls, model, *args, **kwargs):
         model_clone = AutoModelForSeq2SeqLM.from_config(model.config)
-        model_clone.load_state_dict(model.state_dict())
+        model_clone.load_state_dict(model.state_dict()).to(args.device)
         type_to_class = {
             BartModel: RandomUnlimiformerBART,
             BartForConditionalGeneration: RandomUnlimiformerBART,

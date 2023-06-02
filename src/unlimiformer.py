@@ -739,7 +739,7 @@ class Unlimiformer(Generic[ModelType]):
             model_clone = AutoModelForSeq2SeqLM.from_config(model.config)
         else:
             model_clone = AutoModelForCausalLM.from_config(model.config)
-        model_clone.load_state_dict(model.state_dict())
+        model_clone.load_state_dict(model.state_dict()).to(args.device)
         type_to_class = {
             BartModel: UnlimiformerBART,
             BartForConditionalGeneration: UnlimiformerBART,

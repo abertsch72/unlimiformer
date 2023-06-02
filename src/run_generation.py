@@ -429,8 +429,10 @@ def main():
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = model_class.from_pretrained(args.model_name_or_path, num_hidden_layers=args.num_hidden_layers)
-    # model = model_class.from_pretrained(args.model_name_or_path)
+    model_kwargs = {}
+    if args.num_hidden_layers is not None:
+        model_kwargs["num_hidden_layers"] = args.num_hidden_layers
+    model = model_class.from_pretrained(args.model_name_or_path, **kwargs)
     model.to(args.device)
 
     if args.fp16:

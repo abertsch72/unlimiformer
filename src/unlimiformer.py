@@ -337,7 +337,7 @@ class Unlimiformer(Generic[ModelType]):
             else:
                 self.datastore = [DatastoreBatch(dim=self.model.config.hidden_size, batch_size=input_ids.shape[0], flat_index=self.flat_index, gpu_index=self.gpu_index) 
                     for _ in range(self.model.config.num_hidden_layers)]
-                self.hidden_states = [[] for _ in range(model.config.num_hidden_layers)]
+                self.hidden_states = [[] for _ in range(self.model.config.num_hidden_layers)]
             torch.cuda.empty_cache()
         self.prompt_input_ids = input_ids
         self.input_ids = torch.tensor([], dtype=torch.long, device=input_ids.device)
@@ -669,8 +669,12 @@ class Unlimiformer(Generic[ModelType]):
             assert torch.mean(torch.isclose(correct_keys, new_keys, rtol=1e-3, atol=1e-3).float()) > 0.99
             assert torch.mean(torch.isclose(correct_values, new_values, rtol=1e-3, atol=1e-3).float()) > 0.99
 
-        self.cur_layer_key_value_placeholder[0] = new_keys.flatten(0, 1)
-        self.cur_layer_key_value_placeholder[1] = new_values.flatten(0, 1)
+        # new_keys, new_values: (batch * beam, head, encoder_len, attn_dim)
+        new_keys = new_keys.flatten(0, 1)
+        new_values = new_values.flatten(0, 1)
+        num_retrieved_keys = new_keys.shape[-2]
+        self.cur_layer_key_value_placeholder[0] = torch.cat([new_keys, self.cur_layer_key_value_placeholder[0][:,:,num_retrieved_keys:]], dim=-2)
+        self.cur_layer_key_value_placeholder[1] = torch.cat([new_values, self.cur_layer_key_value_placeholder[1][:,:,num_retrieved_keys:]], dim=-2)
         return
 
     def train_attention_forward_hook(self, module, input, output):

@@ -378,7 +378,7 @@ class Unlimiformer(Generic[ModelType]):
                     if not self.gpu_datastore:
                         to_add_embeddings = [states.cpu() for states in to_add_embeddings]
                     for i, layer_states in enumerate(to_add_embeddings):
-                        self.hidden_states[i].append(to_add_embeddings)
+                        self.hidden_states[i].append(layer_states)
                 # list of len layers, inside it there is a list of len batch, each item is (masked_time, dim)
                 for i, to_add_layer in enumerate(to_add):
                     keys = [key[mask.bool()] for key, mask in zip(to_add_layer, to_apply_mask)]
@@ -512,7 +512,7 @@ class Unlimiformer(Generic[ModelType]):
                     self.is_first_test_decoding_step = True
 
                 if input_ids is not None:
-                    self.input_ids = torch.cat([self.input_ids, input_ids[0]])
+                    self.input_ids = torch.cat([self.input_ids, input_ids], dim=-1)
                 if kwargs.get('decoder_input_ids') is not None:
                     self.generated_input_ids = torch.cat([self.generated_input_ids, kwargs['decoder_input_ids']], axis=-1)
             
@@ -541,15 +541,16 @@ class Unlimiformer(Generic[ModelType]):
                 return attn_output, attn_weights_reshaped, past_key_value
             else:
                 attn_output, attn_weights_reshaped, past_key_value = original_cross_attn_forward_func(hidden_states=hidden_states, attention_mask=attention_mask, *args, **kwargs)
-                if self.is_encoder_decoder and not self.is_input_encoding_pass and \
-                        past_key_value[0].shape[2] > self.prompt_keys[self.cur_decoder_layer_index].shape[2]:
-                    self.prompt_keys[self.cur_decoder_layer_index] = torch.cat([self.prompt_keys[self.cur_decoder_layer_index], past_key_value[0][:,:,-1:]], dim=-2)
-                    self.prompt_values[self.cur_decoder_layer_index] = torch.cat([self.prompt_values[self.cur_decoder_layer_index], past_key_value[1][:,:,-1:]], dim=-2)
-                    
-                    if self.cur_decoder_layer_index == self.model.config.num_hidden_layers - 1:
-                        self.prompt_attention_mask = torch.cat([
-                            self.prompt_attention_mask, 
-                            torch.ones([self.prompt_attention_mask.shape[0], 1], dtype=self.prompt_attention_mask.dtype).to(self.device)], dim=-1)
+                # Uri: this part adds the generated tokens to the prompt. 
+                # However it was commented out because currently we always keep the generated tokens in the attention window
+                # if not self.is_encoder_decoder and not self.is_input_encoding_pass and \
+                #         past_key_value[0].shape[2] > self.prompt_keys[self.cur_decoder_layer_index].shape[2]:
+                #     self.prompt_keys[self.cur_decoder_layer_index] = torch.cat([self.prompt_keys[self.cur_decoder_layer_index], past_key_value[0][:,:,-1:]], dim=-2)
+                #     self.prompt_values[self.cur_decoder_layer_index] = torch.cat([self.prompt_values[self.cur_decoder_layer_index], past_key_value[1][:,:,-1:]], dim=-2)
+                #     if self.cur_decoder_layer_index == self.model.config.num_hidden_layers - 1:
+                #         self.prompt_attention_mask = torch.cat([
+                #             self.prompt_attention_mask, 
+                #             torch.ones([self.prompt_attention_mask.shape[0], 1], dtype=self.prompt_attention_mask.dtype).to(self.device)], dim=-1)
                 return attn_output, attn_weights_reshaped, past_key_value
         
         return attention_pre_forward_hook
@@ -559,6 +560,12 @@ class Unlimiformer(Generic[ModelType]):
         if self.is_input_encoding_pass or self.is_first_test_decoding_step:
             return
         with torch.no_grad():
+            prompt_size = self.prompt_input_ids.shape[1]
+            generated_size = self.input_ids.shape[-1] - prompt_size
+            window_size = self.cur_layer_key_value_placeholder[0].shape[-2]
+            # topk = min(self.actual_model_window_size, attn_weights.shape[-1])
+            topk = min(prompt_size, window_size - generated_size + 1)
+
             query = self.process_query(output)[:,-1] # (batch * beam, head, dim)
             query = query[:, self.head_nums] # (batch * beam, head, dim)
 
@@ -567,6 +574,7 @@ class Unlimiformer(Generic[ModelType]):
                 # need to multiply by key vector
                 # query.view(query.shape[0], query.shape[1] * query.shape[2])
                 # k_proj in attention? 
+                datastore_index = 0 if self.is_encoder_decoder else self.cur_decoder_layer_index
                 attention_layer_list = self.attention_layer_to_capture(self.layer_begin, self.layer_end)
                 k_proj_layer = [layers[0] for layers in attention_layer_list][self.cur_decoder_layer_index]
                 v_proj_layer = [layers[1] for layers in attention_layer_list][self.cur_decoder_layer_index]
@@ -577,24 +585,25 @@ class Unlimiformer(Generic[ModelType]):
                 datastore_query = query.unsqueeze(-2) # (batch * beam, num_heads, 1, attn_dim)
                 datastore_query = torch.matmul(datastore_query, k_proj) # (batch * beam, num_heads, 1, embed_dim)
                 datastore_query = datastore_query.squeeze(-2)  # (batch * beam, num_heads, embed_dim)
-                datastore_query = datastore_query.view((self.datastore.batch_size, -1, datastore_query.shape[2])) # (batch, beam * num_heads, embed_dim)
+                batch_size = self.datastore[datastore_index].batch_size
+                datastore_query = datastore_query.view((batch_size, -1, datastore_query.shape[2])) # (batch, beam * num_heads, embed_dim)
                 # then search
                 if self.reconstruct_embeddings:
                     # embeddings: (batch, beam * head, actual_model_window_size, dim)
-                    top_search_key_scores, top_search_key_indices, embeddings = self.datastore.search_and_reconstruct(datastore_query, k=self.actual_model_window_size) 
+                    top_search_key_scores, top_search_key_indices, embeddings = self.datastore[datastore_index].search_and_reconstruct(datastore_query, k=topk) 
                 else:
-                    top_search_key_scores, top_search_key_indices = self.datastore.search(datastore_query, k=self.actual_model_window_size)
+                    top_search_key_scores, top_search_key_indices = self.datastore[datastore_index].search(datastore_query, k=topk)
                     # self.embeddings: (batch,              src_len, dim)
                     # indices:         (batch, beam * head, actual_model_window_size)
                     # embeddings: (batch, beam * head, actual_model_window_size, dim)
-                    embeddings = torch.take_along_dim(input=self.hidden_states.unsqueeze(1), 
-                        indices=top_search_key_indices.unsqueeze(-1).to(self.hidden_states.device), dim=-2)
+                    embeddings = torch.take_along_dim(input=self.hidden_states[datastore_index].unsqueeze(1), 
+                        indices=top_search_key_indices.unsqueeze(-1).to(self.hidden_states[datastore_index].device), dim=-2)
                     embeddings = embeddings.to(self.device)
                 # (batch, beam, head, actual_model_window_size)
-                top_search_key_scores = top_search_key_scores.reshape((self.datastore.batch_size, -1, self.num_heads, self.actual_model_window_size))
-                top_search_key_indices = top_search_key_indices.reshape((self.datastore.batch_size, -1, self.num_heads, self.actual_model_window_size))
+                top_search_key_scores = top_search_key_scores.reshape((batch_size, -1, self.num_heads, window_size))
+                top_search_key_indices = top_search_key_indices.reshape((batch_size, -1, self.num_heads, window_size))
                 # embeddings: (batch, beam, head, actual_model_window_size, dim)
-                embeddings = embeddings.reshape((self.datastore.batch_size, -1, self.num_heads, self.actual_model_window_size, embeddings.shape[-1]))
+                embeddings = embeddings.reshape((batch_size, -1, self.num_heads, window_size, embeddings.shape[-1]))
                                     
             # raw_values are actually token indices; need to look them up
             if (not self.use_datastore) or self.test_datastore:
@@ -618,7 +627,6 @@ class Unlimiformer(Generic[ModelType]):
                     attn_weights[..., :self.actual_model_window_size] -= 1e9
 
                 # target_keys, target_values, topk = self.get_target_slices(output)
-                topk = min(self.actual_model_window_size, attn_weights.shape[-1])
                 top_key_scores, top_key_indices = torch.topk(attn_weights, k=topk, dim=-1, sorted=True) # (batch, beam, head, trunc_source)
                 if self.save_heatmap:
                     # heatrow: (beam, heads, source_len)
@@ -645,18 +653,22 @@ class Unlimiformer(Generic[ModelType]):
             # embeddings: (batch, beam, head, encoder_len, embed_dim)
             embed_dim = embeddings.shape[-1]
             k_weight = k_proj_layer.weight.view(1, 1, self.num_heads, embed_dim // self.num_heads, embed_dim).transpose(-2,-1) # (1, 1, heads, embed_dim, attn_dim)
-            k_bias = k_proj_layer.bias.view(1, self.num_heads, embed_dim // self.num_heads).unsqueeze(-2)
+            k_bias = 0
+            if k_proj_layer.bias is not None:
+                k_bias = k_proj_layer.bias.view(1, self.num_heads, embed_dim // self.num_heads).unsqueeze(-2).unsqueeze(0)
             v_weight = v_proj_layer.weight.view(1, 1, self.num_heads, embed_dim // self.num_heads, embed_dim).transpose(-2,-1)  # (1, heads, embed_dim, attn_dim)
-            v_bias = v_proj_layer.bias.view(1, self.num_heads, embed_dim // self.num_heads).unsqueeze(-2)
+            v_bias = 0
+            if v_proj_layer.bias is not None:
+                v_bias = v_proj_layer.bias.view(1, self.num_heads, embed_dim // self.num_heads).unsqueeze(-2).unsqueeze(0)
             # new_keys, new_values: (batch, beam, head, encoder_len, attn_dim)
-            new_keys = torch.matmul(embeddings, k_weight) + k_bias.unsqueeze(0) # (beam, head, encoder_len, embed_dim)
-            new_values = torch.matmul(embeddings, v_weight) + v_bias.unsqueeze(0) # (beam, head, encoder_len, embed_dim)
+            retrieved_keys = torch.matmul(embeddings, k_weight) + k_bias # (beam, head, encoder_len, embed_dim)
+            retrieved_values = torch.matmul(embeddings, v_weight) + v_bias # (beam, head, encoder_len, embed_dim)
         else:
             # this_layer_prompt_keys:   (batch,       head, source_len, dim)
             # top_key_indices:          (batch, beam, head, trunc_source)
-            new_keys = torch.take_along_dim(this_layer_prompt_keys.unsqueeze(1), indices=top_key_indices.unsqueeze(-1), 
+            retrieved_keys = torch.take_along_dim(this_layer_prompt_keys.unsqueeze(1), indices=top_key_indices.unsqueeze(-1), 
                 dim=-2) # (batch, head, trunc_source, attn_dim)
-            new_values = torch.take_along_dim(this_layer_prompt_values.unsqueeze(1), indices=top_key_indices.unsqueeze(-1), 
+            retrieved_values = torch.take_along_dim(this_layer_prompt_values.unsqueeze(1), indices=top_key_indices.unsqueeze(-1), 
                 dim=-2) # (batch, head, trunc_source, attn_dim)
 
         if self.test_datastore:
@@ -664,17 +676,16 @@ class Unlimiformer(Generic[ModelType]):
                 dim=-2) # (batch, head, trunc_source, attn_dim)
             correct_values = torch.take_along_dim(this_layer_prompt_values.unsqueeze(1), indices=top_key_indices.unsqueeze(-1), 
                 dim=-2) # (batch, head, trunc_source, attn_dim)
-            assert correct_keys.shape == new_keys.shape
-            assert correct_values.shape == new_values.shape
-            assert torch.mean(torch.isclose(correct_keys, new_keys, rtol=1e-3, atol=1e-3).float()) > 0.99
-            assert torch.mean(torch.isclose(correct_values, new_values, rtol=1e-3, atol=1e-3).float()) > 0.99
+            assert correct_keys.shape == retrieved_keys.shape
+            assert correct_values.shape == retrieved_values.shape
+            assert torch.mean(torch.isclose(correct_keys, retrieved_keys, rtol=1e-3, atol=1e-3).float()) > 0.99
+            assert torch.mean(torch.isclose(correct_values, retrieved_values, rtol=1e-3, atol=1e-3).float()) > 0.99
 
-        # new_keys, new_values: (batch * beam, head, encoder_len, attn_dim)
-        new_keys = new_keys.flatten(0, 1)
-        new_values = new_values.flatten(0, 1)
-        num_retrieved_keys = new_keys.shape[-2]
-        self.cur_layer_key_value_placeholder[0] = torch.cat([new_keys, self.cur_layer_key_value_placeholder[0][:,:,num_retrieved_keys:]], dim=-2)
-        self.cur_layer_key_value_placeholder[1] = torch.cat([new_values, self.cur_layer_key_value_placeholder[1][:,:,num_retrieved_keys:]], dim=-2)
+        # retrieved_keys, retrieved_values: (batch * beam, head, encoder_len, attn_dim)
+        retrieved_keys = retrieved_keys.flatten(0, 1)[:,:,:topk]
+        retrieved_values = retrieved_values.flatten(0, 1)[:,:,:topk]
+        self.cur_layer_key_value_placeholder[0] = torch.cat([retrieved_keys, self.cur_layer_key_value_placeholder[0][:,:,topk:]], dim=-2)
+        self.cur_layer_key_value_placeholder[1] = torch.cat([retrieved_values, self.cur_layer_key_value_placeholder[1][:,:,topk:]], dim=-2)
         return
 
     def train_attention_forward_hook(self, module, input, output):

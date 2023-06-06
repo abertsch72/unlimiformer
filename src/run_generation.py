@@ -407,10 +407,13 @@ def main():
     parser.add_argument("--jit", action="store_true", help="Whether or not to use jit trace to accelerate inference")
 
     # args = parser.parse_args()
-    args, _ = parser.parse_known_args()
+    args, unknown_args = parser.parse_known_args()
 
     hf_parser = HfArgumentParser(UnlimiformerArguments)
-    unlimiformer_args, _ = hf_parser.parse_known_args()
+    unlimiformer_args, unknown_unlimiformer_args = hf_parser.parse_known_args()
+    
+    if len(set(unknown_args) & set(unknown_unlimiformer_args)) > 0:
+        raise ValueError(f"Unknown arguments detected: {set(unknown_args) & set(unknown_unlimiformer_args)}")
 
     args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
     args.n_gpu = 0 if args.no_cuda else torch.cuda.device_count()

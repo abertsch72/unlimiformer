@@ -600,10 +600,10 @@ class Unlimiformer(Generic[ModelType]):
                         indices=top_search_key_indices.unsqueeze(-1).to(self.hidden_states[datastore_index].device), dim=-2)
                     embeddings = embeddings.to(self.device)
                 # (batch, beam, head, actual_model_window_size)
-                top_search_key_scores = top_search_key_scores.reshape((batch_size, -1, self.num_heads, window_size))
-                top_search_key_indices = top_search_key_indices.reshape((batch_size, -1, self.num_heads, window_size))
+                top_search_key_scores = top_search_key_scores.reshape(batch_size, -1, *top_search_key_scores.shape[1:])
+                top_search_key_indices = top_search_key_indices.reshape(batch_size, -1, *top_search_key_indices.shape[1:])
                 # embeddings: (batch, beam, head, actual_model_window_size, dim)
-                embeddings = embeddings.reshape((batch_size, -1, self.num_heads, window_size, embeddings.shape[-1]))
+                embeddings = embeddings.reshape(batch_size, -1, *embeddings.shape[1:])
                                     
             # raw_values are actually token indices; need to look them up
             if (not self.use_datastore) or self.test_datastore:

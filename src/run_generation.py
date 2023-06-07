@@ -35,8 +35,8 @@ torch.Tensor.__repr__ = lambda self: f"{self.shape}_{normal_repr(self)}"
 
 from transformers import (
     AutoTokenizer,
-    BloomForCausalLM,
-    BloomTokenizerFast,
+    # BloomForCausalLM,
+    # BloomTokenizerFast,
     CTRLLMHeadModel,
     CTRLTokenizer,
     GenerationMixin,
@@ -137,7 +137,7 @@ MODEL_CLASSES = {
     "transfo-xl": (TransfoXLLMHeadModel, TransfoXLTokenizer),
     "xlm": (XLMWithLMHeadModel, XLMTokenizer),
     "gptj": (GPTJForCausalLM, AutoTokenizer),
-    "bloom": (BloomForCausalLM, BloomTokenizerFast),
+    # "bloom": (BloomForCausalLM, BloomTokenizerFast),
     "llama": (LlamaForCausalLM, LlamaTokenizer),
     "opt": (OPTForCausalLM, GPT2Tokenizer),
 }

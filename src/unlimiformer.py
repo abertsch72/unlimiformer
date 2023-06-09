@@ -336,8 +336,8 @@ class Unlimiformer(Generic[ModelType]):
                 self.hidden_states = [[]]
             else:
                 self.datastore = [DatastoreBatch(dim=self.model.config.hidden_size, batch_size=input_ids.shape[0], flat_index=self.flat_index, gpu_index=self.gpu_index) 
-                    for _ in range(self.model.config.num_hidden_layers)]
-                self.hidden_states = [[] for _ in range(self.model.config.num_hidden_layers)]
+                    for _ in range(self.model.config.num_hidden_layers)[self.layer_begin:self.layer_end]]
+                self.hidden_states = [[] for _ in range(self.model.config.num_hidden_layers)[self.layer_begin:self.layer_end]]
             torch.cuda.empty_cache()
         self.prompt_input_ids = input_ids
         self.input_ids = torch.tensor([], dtype=torch.long, device=input_ids.device)
@@ -357,8 +357,8 @@ class Unlimiformer(Generic[ModelType]):
             self.heatmap = torch.tensor([], dtype=torch.float, device=input_ids.device)
         self.generated_input_ids = torch.tensor([], dtype=torch.long, device=input_ids.device)
 
-        self.prompt_keys = [[] for _ in range(self.model.config.num_hidden_layers)]
-        self.prompt_values = [[] for _ in range(self.model.config.num_hidden_layers)]
+        self.prompt_keys = [[] for _ in range(self.model.config.num_hidden_layers)[self.layer_begin:self.layer_end]]
+        self.prompt_values = [[] for _ in range(self.model.config.num_hidden_layers)[self.layer_begin:self.layer_end]]
         self.prompt_attention_mask = []
         window_indices = self.window_indices(input_ids.shape[-1])
 
@@ -369,7 +369,8 @@ class Unlimiformer(Generic[ModelType]):
             if self.is_encoder_decoder:
                 hidden_states_to_index = [hidden_states.encoder_last_hidden_state] # list of length 1 of (batch, chunked_source_len, dim)
             else:
-                hidden_states_to_index = list(hidden_states.hidden_states)[:-1] # list of len num_layers of (batch, chunked_source_len, dim)
+                 # list of len num_layers of (batch, chunked_source_len, dim)
+                hidden_states_to_index = list(hidden_states.hidden_states)[:-1][self.layer_begin:self.layer_end]
             if self.use_datastore:
                 to_add = [state[:, update_start_ind:update_end_ind].detach() for state in hidden_states_to_index]
                 to_apply_mask = chunk_attention_mask[:, update_start_ind:update_end_ind]
@@ -581,10 +582,7 @@ class Unlimiformer(Generic[ModelType]):
                 
                 # modify query by k_projs 
                 k_proj = k_proj_layer.weight
-                k_proj = k_proj.view(1, self.num_heads, query.shape[-1], k_proj.shape[0]) # (1, num_heads, attn_dim, embed_dim)
-                datastore_query = query.unsqueeze(-2) # (batch * beam, num_heads, 1, attn_dim)
-                datastore_query = torch.matmul(datastore_query, k_proj) # (batch * beam, num_heads, 1, embed_dim)
-                datastore_query = datastore_query.squeeze(-2)  # (batch * beam, num_heads, embed_dim)
+                datastore_query = self.preprocess_query(query, k_proj) # (batch * beam, num_heads, embed_dim)
                 batch_size = self.datastore[datastore_index].batch_size
                 datastore_query = datastore_query.view((batch_size, -1, datastore_query.shape[2])) # (batch, beam * num_heads, embed_dim)
                 # then search
@@ -651,18 +649,7 @@ class Unlimiformer(Generic[ModelType]):
         if self.use_datastore:
             # k_proj_layer.weight, v_proj_layer.weight: (embed_dim, embed_dim)
             # embeddings: (batch, beam, head, encoder_len, embed_dim)
-            embed_dim = embeddings.shape[-1]
-            k_weight = k_proj_layer.weight.view(1, 1, self.num_heads, embed_dim // self.num_heads, embed_dim).transpose(-2,-1) # (1, 1, heads, embed_dim, attn_dim)
-            k_bias = 0
-            if k_proj_layer.bias is not None:
-                k_bias = k_proj_layer.bias.view(1, self.num_heads, embed_dim // self.num_heads).unsqueeze(-2).unsqueeze(0)
-            v_weight = v_proj_layer.weight.view(1, 1, self.num_heads, embed_dim // self.num_heads, embed_dim).transpose(-2,-1)  # (1, heads, embed_dim, attn_dim)
-            v_bias = 0
-            if v_proj_layer.bias is not None:
-                v_bias = v_proj_layer.bias.view(1, self.num_heads, embed_dim // self.num_heads).unsqueeze(-2).unsqueeze(0)
-            # new_keys, new_values: (batch, beam, head, encoder_len, attn_dim)
-            retrieved_keys = torch.matmul(embeddings, k_weight) + k_bias # (beam, head, encoder_len, embed_dim)
-            retrieved_values = torch.matmul(embeddings, v_weight) + v_bias # (beam, head, encoder_len, embed_dim)
+            retrieved_keys, retrieved_values = self.post_process_retrieved(embeddings, k_proj_layer, v_proj_layer, top_search_key_indices)
         else:
             # this_layer_prompt_keys:   (batch,       head, source_len, dim)
             # top_key_indices:          (batch, beam, head, trunc_source)
@@ -730,6 +717,27 @@ class Unlimiformer(Generic[ModelType]):
         self.cur_layer_key_value_placeholder[0] = new_keys.flatten(0, 1).squeeze(2)
         self.cur_layer_key_value_placeholder[1] = new_values.flatten(0, 1).squeeze(2)
         return
+
+    def preprocess_query(self, query, k_proj_weight):
+        k_proj = k_proj_weight.view(1, self.num_heads, query.shape[-1], k_proj_weight.shape[0]) # (1, num_heads, attn_dim, embed_dim)
+        datastore_query = query.unsqueeze(-2) # (batch * beam, num_heads, 1, attn_dim)
+        datastore_query = torch.matmul(datastore_query, k_proj) # (batch * beam, num_heads, 1, embed_dim)
+        datastore_query = datastore_query.squeeze(-2)  # (batch * beam, num_heads, embed_dim)
+        return datastore_query
+
+    def post_process_retrieved(self, embeddings, k_proj_layer, v_proj_layer, top_search_key_indices):
+        embed_dim = embeddings.shape[-1]
+        k_weight = k_proj_layer.weight.view(1, 1, self.num_heads, embed_dim // self.num_heads, embed_dim).transpose(-2,-1) # (1, 1, heads, embed_dim, attn_dim)
+        k_bias = 0
+        if k_proj_layer.bias is not None:
+            k_bias = k_proj_layer.bias.view(1, self.num_heads, embed_dim // self.num_heads).unsqueeze(-2).unsqueeze(0)
+        v_weight = v_proj_layer.weight.view(1, 1, self.num_heads, embed_dim // self.num_heads, embed_dim).transpose(-2,-1)  # (1, heads, embed_dim, attn_dim)
+        v_bias = 0
+        if v_proj_layer.bias is not None:
+            v_bias = v_proj_layer.bias.view(1, self.num_heads, embed_dim // self.num_heads).unsqueeze(-2).unsqueeze(0)
+        # new_keys, new_values: (batch, beam, head, encoder_len, attn_dim)
+        retrieved_keys = torch.matmul(embeddings, k_weight) + k_bias # (beam, head, encoder_len, embed_dim)
+        retrieved_values = torch.matmul(embeddings, v_weight) + v_bias # (beam, head, encoder_len, embed_dim)
 
     def set_gradient_checkpointing(self, value):
         self.model.base_model.decoder.gradient_checkpointing = value
@@ -1010,6 +1018,56 @@ class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
         # query: (batch, time, heads, attn_dim)
         query = output.view(output.shape[0], output.shape[1], attention.num_heads, attention.head_dim).contiguous()
         return query
+
+    def rotate_half(self, x):
+        """Rotates half the hidden dims of the input."""
+        x1 = x[..., : x.shape[-1] // 2]
+        x2 = x[..., x.shape[-1] // 2 :]
+        return torch.cat((-x2, x1), dim=-1)
+
+    def preprocess_query(self, query, k_proj_weight):
+        # query: (batch * time, head, dim)
+        attention = self.model.base_model.layers[-1].self_attn
+        cos, sin = attention.rotary_emb(query, seq_len=self.input_ids.shape[1])
+        cos = cos[:,:,-1]  # [1, 1, dim]
+        sin = sin[:,:,-1]  # [1, 1, dim]
+        # cos = cos[-1].unsqueeze(0).unsqueeze(0)  # [bs, 1, seq_len, dim]
+        # sin = sin[-1].unsqueeze(0)  # [bs, 1, seq_len, dim]
+        q_embed = (query * cos) + (self.rotate_half(query) * sin)
+        
+        k_proj = k_proj_weight.view(1, self.num_heads, query.shape[-1], k_proj_weight.shape[0]) # (1, num_heads, attn_dim, embed_dim)
+        k_proj_l = k_proj[..., :k_proj.shape[-2] // 2, :]
+        k_proj_r = k_proj[..., k_proj.shape[-2] // 2:, :]
+        k_proj_rotated = torch.cat([-k_proj_l, k_proj_r], dim=-2)
+
+        datastore_query = query.unsqueeze(-2) # (batch * beam, num_heads, 1, attn_dim)
+        datastore_query = torch.matmul(datastore_query, k_proj + k_proj_rotated) # (batch * beam, num_heads, 1, embed_dim)
+        datastore_query = datastore_query.squeeze(-2)  # (batch * beam, num_heads, embed_dim)
+        return datastore_query
+
+    def post_process_retrieved(self, embeddings, k_proj_layer, v_proj_layer, top_search_key_indices):
+        embed_dim = embeddings.shape[-1]
+        k_weight = k_proj_layer.weight.view(1, 1, self.num_heads, embed_dim // self.num_heads, embed_dim).transpose(-2,-1) # (1, 1, heads, embed_dim, attn_dim)
+        k_bias = 0
+        if k_proj_layer.bias is not None:
+            k_bias = k_proj_layer.bias.view(1, self.num_heads, embed_dim // self.num_heads).unsqueeze(-2).unsqueeze(0)
+        v_weight = v_proj_layer.weight.view(1, 1, self.num_heads, embed_dim // self.num_heads, embed_dim).transpose(-2,-1)  # (1, heads, embed_dim, attn_dim)
+        v_bias = 0
+        if v_proj_layer.bias is not None:
+            v_bias = v_proj_layer.bias.view(1, self.num_heads, embed_dim // self.num_heads).unsqueeze(-2).unsqueeze(0)
+        # new_keys, new_values: (batch, beam, head, encoder_len, attn_dim)
+        retrieved_keys = torch.matmul(embeddings, k_weight) + k_bias # (beam, head, encoder_len, embed_dim)
+        retrieved_values = torch.matmul(embeddings, v_weight) + v_bias # (beam, head, encoder_len, embed_dim)
+
+        attention = self.model.base_model.layers[-1].self_attn
+        cos, sin = attention.rotary_emb(retrieved_values, seq_len=self.hidden_states[0].shape[1])
+        cos = cos.squeeze(1).squeeze(0)  # [seq_len, dim]
+        sin = sin.squeeze(1).squeeze(0)  # [seq_len, dim]
+        cos = cos[top_search_key_indices]  # [bs, 1, seq_len, dim]
+        sin = sin[top_search_key_indices]  # [bs, 1, seq_len, dim]
+        retrieved_keys = (retrieved_keys * cos) + (self.rotate_half(retrieved_keys) * sin)
+        return retrieved_keys, retrieved_values
+        
 
 class ActivationCapturer(nn.Module):
     def __init__(self, layer, capture_input=False):

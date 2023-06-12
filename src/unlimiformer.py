@@ -373,6 +373,7 @@ class Unlimiformer(Generic[ModelType]):
                 hidden_states_to_index = list(hidden_states.hidden_states)[:-1][self.layer_begin:self.layer_end]
             if self.use_datastore:
                 to_add = [state[:, update_start_ind:update_end_ind].detach() for state in hidden_states_to_index]
+                to_add = self.preprocess_hidden_states(to_add)
                 to_apply_mask = chunk_attention_mask[:, update_start_ind:update_end_ind]
                 if not self.reconstruct_embeddings:
                     to_add_embeddings = to_add
@@ -718,6 +719,9 @@ class Unlimiformer(Generic[ModelType]):
         self.cur_layer_key_value_placeholder[1] = new_values.flatten(0, 1).squeeze(2)
         return
 
+    def preprocess_hidden_states(self, to_add):
+        pass
+    
     def preprocess_query(self, query, k_proj_weight):
         k_proj = k_proj_weight.view(1, self.num_heads, query.shape[-1], k_proj_weight.shape[0]) # (1, num_heads, attn_dim, embed_dim)
         datastore_query = query.unsqueeze(-2) # (batch * beam, num_heads, 1, attn_dim)
@@ -1018,6 +1022,12 @@ class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
         # query: (batch, time, heads, attn_dim)
         query = output.view(output.shape[0], output.shape[1], attention.num_heads, attention.head_dim).contiguous()
         return query
+
+    def preprocess_hidden_states(self, to_add):
+        layers = self.model.base_model.layers[self.layer_begin:self.layer_end]
+
+        normalized_to_add = [layer.input_layernorm(to_add_layer) for to_add_layer, layer in zip(to_add, layers)]
+        return normalized_to_add
 
     def rotate_half(self, x):
         """Rotates half the hidden dims of the input."""

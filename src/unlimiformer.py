@@ -106,20 +106,21 @@ class Unlimiformer(Generic[ModelType]):
         if self.hooks_injected:
             return
         # Inject our activation_capturer to capture the activations at every forward pass
-        attention_layers_to_capture = self.attention_layer_to_capture(self.layer_begin, self.layer_end)
-        self.activation_capturer = []
-        for layer in attention_layers_to_capture:
-            if type(layer) is list:
-                layer_capturers = []
-                for k_or_v in layer:
-                    capturer = ActivationCapturer(k_or_v, capture_input=False)
-                    layer_capturers.append(capturer)
-                    self.register_hook(k_or_v, capturer)
-                self.activation_capturer.append(layer_capturers)
-            else:
-                capturer = ActivationCapturer(layer, capture_input=False)
-                self.register_hook(layer, capturer)
-                self.activation_capturer.append(capturer)
+        if not self.use_datastore:
+            attention_layers_to_capture = self.attention_layer_to_capture(self.layer_begin, self.layer_end)
+            self.activation_capturer = []
+            for layer in attention_layers_to_capture:
+                if type(layer) is list:
+                    layer_capturers = []
+                    for k_or_v in layer:
+                        capturer = ActivationCapturer(k_or_v, capture_input=False)
+                        layer_capturers.append(capturer)
+                        self.register_hook(k_or_v, capturer)
+                    self.activation_capturer.append(layer_capturers)
+                else:
+                    capturer = ActivationCapturer(layer, capture_input=False)
+                    self.register_hook(layer, capturer)
+                    self.activation_capturer.append(capturer)
 
         # Inject our main function after the main attention function
         attention_layers_to_run = self.attention_op_to_run(self.layer_begin, self.layer_end)

@@ -106,21 +106,20 @@ class Unlimiformer(Generic[ModelType]):
         if self.hooks_injected:
             return
         # Inject our activation_capturer to capture the activations at every forward pass
-        if not self.use_datastore:
-            attention_layers_to_capture = self.attention_layer_to_capture(self.layer_begin, self.layer_end)
-            self.activation_capturer = []
-            for layer in attention_layers_to_capture:
-                if type(layer) is list:
-                    layer_capturers = []
-                    for k_or_v in layer:
-                        capturer = ActivationCapturer(k_or_v, capture_input=False)
-                        layer_capturers.append(capturer)
-                        self.register_hook(k_or_v, capturer)
-                    self.activation_capturer.append(layer_capturers)
-                else:
-                    capturer = ActivationCapturer(layer, capture_input=False)
-                    self.register_hook(layer, capturer)
-                    self.activation_capturer.append(capturer)
+        attention_layers_to_capture = self.activation_to_capture(self.layer_begin, self.layer_end)
+        self.activation_capturer = []
+        for layer in attention_layers_to_capture:
+            if type(layer) is list:
+                layer_capturers = []
+                for k_or_v in layer:
+                    capturer = ActivationCapturer(k_or_v, capture_input=False)
+                    layer_capturers.append(capturer)
+                    self.register_hook(k_or_v, capturer)
+                self.activation_capturer.append(layer_capturers)
+            else:
+                capturer = ActivationCapturer(layer, capture_input=False)
+                self.register_hook(layer, capturer)
+                self.activation_capturer.append(capturer)
 
         # Inject our main function after the main attention function
         attention_layers_to_run = self.attention_op_to_run(self.layer_begin, self.layer_end)
@@ -341,7 +340,7 @@ class Unlimiformer(Generic[ModelType]):
                 self.hidden_states = [[] for _ in range(self.model.config.num_hidden_layers)[self.layer_begin:self.layer_end]]
             torch.cuda.empty_cache()
         self.prompt_input_ids = input_ids
-        self.input_ids = torch.tensor([], dtype=torch.long, device=input_ids.device)
+        self.input_ids_size = 0
         self.prompt_keys, self.prompt_values = None, None
         self.prev_tokens = [None for _ in range(len(self.original_decoder_layer_cross_attn_forward_funcs))]
         self.last_beam_idx = None
@@ -364,14 +363,15 @@ class Unlimiformer(Generic[ModelType]):
         window_indices = self.window_indices(input_ids.shape[-1])
 
         for context_start_ind, context_end_ind, update_start_ind, update_end_ind in window_indices:
-            chunk = input_ids[:, context_start_ind:context_end_ind]
+            chunk = input_ids[:, context_start_ind:context_end_ind].to(self.device)
             chunk_attention_mask = attention_mask[:, context_start_ind:context_end_ind]
-            hidden_states = self.model(chunk, attention_mask=chunk_attention_mask, labels=dummy_labels, return_dict=True, output_hidden_states=True)
-            if self.is_encoder_decoder:
-                hidden_states_to_index = [hidden_states.encoder_last_hidden_state] # list of length 1 of (batch, chunked_source_len, dim)
-            else:
-                 # list of len num_layers of (batch, chunked_source_len, dim)
-                hidden_states_to_index = list(hidden_states.hidden_states)[:-1][self.layer_begin:self.layer_end]
+            _ = self.model(chunk, attention_mask=chunk_attention_mask, labels=dummy_labels) # , return_dict=True, output_hidden_states=True)
+            # TODO: verify with BART as well
+            # hidden_states_to_index = [hidden_states.encoder_last_hidden_state] # list of length 1 of (batch, chunked_source_len, dim)
+            hidden_states_to_index = [
+                layer_capturer.captured for layer_capturer in self.activation_capturer
+            ] 
+            # hidden_states_to_index = list(hidden_states.hidden_states)[:-1][self.layer_begin:self.layer_end]
             if self.use_datastore:
                 to_add = [state[:, update_start_ind:update_end_ind].detach() for state in hidden_states_to_index]
                 to_add = self.preprocess_hidden_states(to_add)
@@ -498,7 +498,9 @@ class Unlimiformer(Generic[ModelType]):
             new_kwargs = {k: v for k, v in kwargs.items() if k != 'attention_mask'}
             new_kwargs['attention_mask'] = kwargs['attention_mask'][:, :self.actual_model_window_size]
         new_kwargs['use_cache'] = True
-        return self.original_generate_func(input_ids[:, :self.actual_model_window_size], **new_kwargs)
+        # TODO: in decoder models, maybe need to pass the suffix instead
+        input_ids_prefix = input_ids[:, :self.actual_model_window_size].to(self.device)
+        return self.original_generate_func(input_ids_prefix, **new_kwargs)
 
     def pre_forward_hook(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
         self.set_gradient_checkpointing(False)
@@ -515,7 +517,7 @@ class Unlimiformer(Generic[ModelType]):
                     self.is_first_test_decoding_step = True
 
                 if input_ids is not None:
-                    self.input_ids = torch.cat([self.input_ids, input_ids], dim=-1)
+                    self.input_ids_size += input_ids.shape[-1]
                 if kwargs.get('decoder_input_ids') is not None:
                     self.generated_input_ids = torch.cat([self.generated_input_ids, kwargs['decoder_input_ids']], axis=-1)
             
@@ -564,7 +566,7 @@ class Unlimiformer(Generic[ModelType]):
             return
         with torch.no_grad():
             prompt_size = self.prompt_input_ids.shape[1]
-            generated_size = self.input_ids.shape[-1] - prompt_size
+            generated_size = self.input_ids_size - prompt_size
             window_size = self.cur_layer_key_value_placeholder[0].shape[-2]
             # topk = min(self.actual_model_window_size, attn_weights.shape[-1])
             topk = min(prompt_size, window_size - generated_size + 1)
@@ -578,7 +580,7 @@ class Unlimiformer(Generic[ModelType]):
                 # query.view(query.shape[0], query.shape[1] * query.shape[2])
                 # k_proj in attention? 
                 datastore_index = 0 if self.is_encoder_decoder else self.cur_decoder_layer_index
-                attention_layer_list = self.attention_layer_to_capture(self.layer_begin, self.layer_end)
+                attention_layer_list = self.get_kv_projections(self.layer_begin, self.layer_end)
                 k_proj_layer = [layers[0] for layers in attention_layer_list][self.cur_decoder_layer_index]
                 v_proj_layer = [layers[1] for layers in attention_layer_list][self.cur_decoder_layer_index]
                 
@@ -644,8 +646,8 @@ class Unlimiformer(Generic[ModelType]):
                 if self.is_encoder_decoder:
                     for i, beam in enumerate(self.generated_input_ids):
                         print(f'({i}) Generated: {self.tokenizer.decode(beam)}')
-                else:
-                    print(f'Generated: {self.tokenizer.decode(self.input_ids)}')
+                # else:
+                #     print(f'Generated: {self.tokenizer.decode(self.input_ids)}')
                 print()
         
         if self.use_datastore:
@@ -721,7 +723,7 @@ class Unlimiformer(Generic[ModelType]):
         return
 
     def preprocess_hidden_states(self, to_add):
-        pass
+        return to_add
     
     def preprocess_query(self, query, k_proj_weight):
         k_proj = k_proj_weight.view(1, self.num_heads, query.shape[-1], k_proj_weight.shape[0]) # (1, num_heads, attn_dim, embed_dim)
@@ -843,11 +845,20 @@ class UnlimiformerBART(Unlimiformer[BartModel]):
         query = output.view(output.shape[0], output.shape[1], attention.num_heads, attention.head_dim).contiguous()
         return query
 
-    def attention_layer_to_capture(self, layer_begin, layer_end): 
+    def get_kv_projections(self, layer_begin, layer_end): 
         return [
             [layer.encoder_attn.k_proj, layer.encoder_attn.v_proj]
             for layer in self.model.base_model.decoder.layers[layer_begin:layer_end]
         ]
+
+    def activation_to_capture(self, layer_begin, layer_end): 
+        if self.use_datastore:
+            return [
+                layer # TODO: verify with BART
+                for layer in self.model.base_model.encoder.layers[layer_begin:layer_end]
+            ]
+        else:
+            return self.get_kv_projections(layer_begin, layer_end)
 
     def attention_op_to_run(self, layer_begin, layer_end):
         return [
@@ -919,11 +930,20 @@ class UnlimiformerT5(Unlimiformer[T5Model]):
         query = output.view(output.shape[0], -1, attention.n_heads, attention.key_value_proj_dim).contiguous()
         return query
 
-    def attention_layer_to_capture(self, layer_begin, layer_end):
+    def get_kv_projections(self, layer_begin, layer_end):
         return [
             [layer.layer[1].EncDecAttention.k, layer.layer[1].EncDecAttention.v]
                 for layer in self.model.base_model.decoder.block[layer_begin:layer_end]
         ]
+
+    def activation_to_capture(self, layer_begin, layer_end): 
+        if self.use_datastore:
+            return [
+                layer # TODO: verify with BART
+                for layer in self.model.base_model.encoder.layers[layer_begin:layer_end]
+            ]
+        else:
+            return self.get_kv_projections(layer_begin, layer_end)
     
     def attention_op_to_run(self, layer_begin, layer_end):
         return [
@@ -977,11 +997,20 @@ class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
     def __init__(self, model: LlamaModel, *args, **kwargs):
         super().__init__(model, *args, **kwargs)
     
-    def attention_layer_to_capture(self, layer_begin, layer_end): 
+    def get_kv_projections(self, layer_begin, layer_end): 
         return [
             [layer.self_attn.k_proj, layer.self_attn.v_proj]
             for layer in self.model.base_model.layers[layer_begin:layer_end]
         ]
+
+    def activation_to_capture(self, layer_begin, layer_end): 
+        if self.use_datastore:
+            return [
+                layer.input_layernorm
+                for layer in self.model.base_model.layers[layer_begin:layer_end]
+            ]
+        else:
+            return self.get_kv_projections(layer_begin, layer_end)
 
     def attention_op_to_run(self, layer_begin, layer_end):
         return [
@@ -1024,11 +1053,11 @@ class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
         query = output.view(output.shape[0], output.shape[1], attention.num_heads, attention.head_dim).contiguous()
         return query
 
-    def preprocess_hidden_states(self, to_add):
-        layers = self.model.base_model.layers[self.layer_begin:self.layer_end]
+    # def preprocess_hidden_states(self, to_add):
+    #     layers = self.model.base_model.layers[self.layer_begin:self.layer_end]
 
-        normalized_to_add = [layer.input_layernorm(to_add_layer) for to_add_layer, layer in zip(to_add, layers)]
-        return normalized_to_add
+    #     normalized_to_add = [layer.input_layernorm(to_add_layer) for to_add_layer, layer in zip(to_add, layers)]
+    #     return normalized_to_add
 
     def rotate_half(self, x):
         """Rotates half the hidden dims of the input."""
@@ -1039,7 +1068,7 @@ class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
     def preprocess_query(self, query, k_proj_weight):
         # query: (batch * time, head, dim)
         attention = self.model.base_model.layers[-1].self_attn
-        cos, sin = attention.rotary_emb(query, seq_len=self.input_ids.shape[1])
+        cos, sin = attention.rotary_emb(query, seq_len=self.input_ids_size)
         cos = cos[:,:,-1]  # [1, 1, dim]
         sin = sin[:,:,-1]  # [1, 1, dim]
         # cos = cos[-1].unsqueeze(0).unsqueeze(0)  # [bs, 1, seq_len, dim]

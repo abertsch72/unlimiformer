@@ -97,7 +97,7 @@ class Datastore():
                 end = min(len(keys), start + num_keys_to_add_at_a_time)
                 to_add = keys[start:end]
                 if not self.gpu_index:
-                    to_add = to_add.cpu()
+                    to_add = to_add.cpu().float()
                 # self.index.add_with_ids(to_add, torch.arange(start+self.index_size, end+self.index_size))
                 self.index.add(to_add)
                 self.index_size += end - start
@@ -126,7 +126,7 @@ class Datastore():
             queries = queries.unsqueeze(0)
         assert queries.shape[-1] == self.dimension # query vectors are same shape as "key" vectors
         if not self.gpu_index:
-            queries = queries.cpu()
+            queries = queries.cpu().float()
         scores, values = self.index.search(queries, k)
         # avoid returning -1 as a value
         values[values == -1] = 0

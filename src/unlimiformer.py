@@ -130,7 +130,7 @@ class Unlimiformer(Generic[ModelType]):
         self.original_decoder_layer_cross_attn_forward_funcs = []
         for i, decoder_layer in enumerate(decoder_layers_to_run):
             self.original_decoder_layer_cross_attn_forward_funcs.append(self.cross_attention(decoder_layer).forward)
-            self.cross_attention(decoder_layer).forward = self.create_cross_attn_pre_forward_hook(self.cross_attention(decoder_layer).forward, decoder_layer, i)
+            self.cross_attention(decoder_layer).forward = self.cross_attn_pre_forward_hook
 
         # Inject our hook function in the beginning of generation.
         # When the "model.generate()" will be called, it will first call our "reset_generation()" function, 
@@ -162,7 +162,7 @@ class Unlimiformer(Generic[ModelType]):
         for i, decoder_layer in enumerate(decoder_layers_to_run):
             attention = self.cross_attention(decoder_layer)
             self.original_decoder_layer_cross_attn_forward_funcs.append(attention.forward)
-            attention.forward = self.create_cross_attn_pre_forward_hook(attention.forward, decoder_layer, i)
+            attention.forward = self.cross_attn_pre_forward_hook
 
         self.original_decoder_layer_forward_funcs = []
         for decoder_layer in decoder_layers_to_run:
@@ -521,44 +521,45 @@ class Unlimiformer(Generic[ModelType]):
                 if kwargs.get('decoder_input_ids') is not None:
                     self.generated_input_ids = torch.cat([self.generated_input_ids, kwargs['decoder_input_ids']], axis=-1)
             
+        self.cur_decoder_layer_index = 0
         result = self.original_forward_func(input_ids=input_ids, labels=labels, attention_mask=attention_mask, **kwargs)
         self.is_first_test_decoding_step = False
         return result
 
-    def create_cross_attn_pre_forward_hook(self, original_cross_attn_forward_func, decoder_layer, i):
-        def attention_pre_forward_hook(hidden_states, attention_mask=None, *args, **kwargs):
-            self.cur_decoder_layer_index = i
-            if kwargs.get('past_key_value') is not None:
-                # it's a tuple, and we convert it to a list to be able to perform assignment 
-                # and modify its items from our attention_forward_hook
-                self.cur_layer_key_value_placeholder = \
-                    kwargs['past_key_value'] = list(kwargs['past_key_value']) # (batch, head, time, attn_dim)
+    def cross_attn_pre_forward_hook(self, hidden_states, attention_mask=None, *args, **kwargs):
+    # def attention_pre_forward_hook(hidden_states, attention_mask=None, *args, **kwargs):
+        original_cross_attn_forward_func = self.original_decoder_layer_cross_attn_forward_funcs[self.cur_decoder_layer_index]
+        if kwargs.get('past_key_value') is not None:
+            # it's a tuple, and we convert it to a list to be able to perform assignment 
+            # and modify its items from our attention_forward_hook
+            self.cur_layer_key_value_placeholder = \
+                kwargs['past_key_value'] = list(kwargs['past_key_value']) # (batch, head, time, attn_dim)
 
-            batch_size, tgt_len, dim = hidden_states.shape
-            if self.model.training:
-                # from: (batch, tgt_len, dim) to: (batch * tgt_len, 1, dim)
-                hidden_states = hidden_states.reshape(-1, 1, hidden_states.shape[-1])
-                # from: (batch, 1, tgt_len, dim) to: (batch * tgt_len, 1, 1, dim)
-                attention_mask = attention_mask.reshape(-1, 1, 1, attention_mask.shape[-1])
-                
-                attn_output, attn_weights_reshaped, past_key_value = original_cross_attn_forward_func(hidden_states=hidden_states, attention_mask=attention_mask, *args, **kwargs)
-                attn_output = attn_output.reshape(batch_size, tgt_len, dim)
-                return attn_output, attn_weights_reshaped, past_key_value
-            else:
-                attn_output, attn_weights_reshaped, past_key_value = original_cross_attn_forward_func(hidden_states=hidden_states, attention_mask=attention_mask, *args, **kwargs)
-                # Uri: this part adds the generated tokens to the prompt. 
-                # However it was commented out because currently we always keep the generated tokens in the attention window
-                # if not self.is_encoder_decoder and not self.is_input_encoding_pass and \
-                #         past_key_value[0].shape[2] > self.prompt_keys[self.cur_decoder_layer_index].shape[2]:
-                #     self.prompt_keys[self.cur_decoder_layer_index] = torch.cat([self.prompt_keys[self.cur_decoder_layer_index], past_key_value[0][:,:,-1:]], dim=-2)
-                #     self.prompt_values[self.cur_decoder_layer_index] = torch.cat([self.prompt_values[self.cur_decoder_layer_index], past_key_value[1][:,:,-1:]], dim=-2)
-                #     if self.cur_decoder_layer_index == self.model.config.num_hidden_layers - 1:
-                #         self.prompt_attention_mask = torch.cat([
-                #             self.prompt_attention_mask, 
-                #             torch.ones([self.prompt_attention_mask.shape[0], 1], dtype=self.prompt_attention_mask.dtype).to(self.device)], dim=-1)
-                return attn_output, attn_weights_reshaped, past_key_value
-        
-        return attention_pre_forward_hook
+        batch_size, tgt_len, dim = hidden_states.shape
+        if self.model.training:
+            # from: (batch, tgt_len, dim) to: (batch * tgt_len, 1, dim)
+            hidden_states = hidden_states.reshape(-1, 1, hidden_states.shape[-1])
+            # from: (batch, 1, tgt_len, dim) to: (batch * tgt_len, 1, 1, dim)
+            attention_mask = attention_mask.reshape(-1, 1, 1, attention_mask.shape[-1])
+            
+            attn_output, attn_weights_reshaped, past_key_value = original_cross_attn_forward_func(hidden_states=hidden_states, attention_mask=attention_mask, *args, **kwargs)
+            attn_output = attn_output.reshape(batch_size, tgt_len, dim)
+            result = (attn_output, attn_weights_reshaped, past_key_value)
+        else:
+            result = original_cross_attn_forward_func(hidden_states=hidden_states, attention_mask=attention_mask, *args, **kwargs)
+            # Uri: this part adds the generated tokens to the prompt. 
+            # However it was commented out because currently we always keep the generated tokens in the attention window
+            # if not self.is_encoder_decoder and not self.is_input_encoding_pass and \
+            #         past_key_value[0].shape[2] > self.prompt_keys[self.cur_decoder_layer_index].shape[2]:
+            #     self.prompt_keys[self.cur_decoder_layer_index] = torch.cat([self.prompt_keys[self.cur_decoder_layer_index], past_key_value[0][:,:,-1:]], dim=-2)
+            #     self.prompt_values[self.cur_decoder_layer_index] = torch.cat([self.prompt_values[self.cur_decoder_layer_index], past_key_value[1][:,:,-1:]], dim=-2)
+            #     if self.cur_decoder_layer_index == self.model.config.num_hidden_layers - 1:
+            #         self.prompt_attention_mask = torch.cat([
+            #             self.prompt_attention_mask, 
+            #             torch.ones([self.prompt_attention_mask.shape[0], 1], dtype=self.prompt_attention_mask.dtype).to(self.device)], dim=-1)
+        self.cur_decoder_layer_index += 1
+        return result
+
 
     def attention_forward_hook(self, module, input, output):
         # output: (batch, time, 3 * heads * attention_dim)

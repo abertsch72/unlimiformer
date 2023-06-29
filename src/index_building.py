@@ -91,6 +91,7 @@ class Datastore():
         self.index.train(self.keys)
         self.logger.info(f'Training took {time.time() - start_time} s')
         self.add_keys(keys=self.keys, index_is_trained=True)
+        self.keys = None
 
     def add_keys(self, keys, num_keys_to_add_at_a_time=1000000, index_is_trained=False):
         if self.use_flat_index or index_is_trained:

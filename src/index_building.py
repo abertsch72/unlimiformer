@@ -125,20 +125,21 @@ class Datastore():
     
     def search(self, queries, k):
         model_device = queries.device
+        model_dtype = queries.dtype
         if len(queries.shape) == 1: # searching for only 1 vector, add one extra dim
             self.logger.info("Searching for a single vector; unsqueezing")
             queries = queries.unsqueeze(0)
         assert queries.shape[-1] == self.dimension # query vectors are same shape as "key" vectors
         if not self.gpu_index:
-            queries = queries.cpu().float()
+            queries = queries.cpu()
         else:
             queries = queries.to(self.device)
-        scores, values = self.index.search(queries, k)
+        scores, values = self.index.search(queries.float(), k)
         values[values == -1] = 0
         
         # avoid returning -1 as a value
         # self.logger.info("Searching done")
-        return scores.to(model_device), values.to(model_device)
+        return scores.to(model_dtype).to(model_device), values.to(model_device)
 
     
     

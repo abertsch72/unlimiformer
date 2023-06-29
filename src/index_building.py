@@ -14,7 +14,7 @@ class DatastoreBatch():
         self.batch_size = batch_size
         self.device = index_device if index_device is not None else torch.device('cuda' if gpu_index else 'cpu')
         for i in range(batch_size):
-            self.indices.append(Datastore(dim, use_flat_index=flat_index, gpu_index=gpu_index, verbose=verbose))
+            self.indices.append(Datastore(dim, use_flat_index=flat_index, gpu_index=gpu_index, verbose=verbose, device=self.device))
     
     def move_to_gpu(self):
         for i in range(self.batch_size):
@@ -70,7 +70,7 @@ class Datastore():
     def move_to_gpu(self):
         co = faiss.GpuClonerOptions()
         co.useFloat16 = True
-        self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), self.device.index, self.index, co)
+        self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), int(self.device.index), self.index, co)
     
     def train_index(self):
         if self.use_flat_index:

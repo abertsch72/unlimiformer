@@ -70,7 +70,7 @@ class Datastore():
     def move_to_gpu(self):
         co = faiss.GpuClonerOptions()
         co.useFloat16 = True
-        self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), int(self.device.index), self.index, co)
+        self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), self.device.index, self.index, co)
     
     def train_index(self):
         if self.use_flat_index:
@@ -100,9 +100,9 @@ class Datastore():
                 end = min(len(keys), start + num_keys_to_add_at_a_time)
                 to_add = keys[start:end].to(self.device)
                 if not self.gpu_index:
-                    to_add = to_add.cpu().float()
+                    to_add = to_add.cpu()
                 # self.index.add_with_ids(to_add, torch.arange(start+self.index_size, end+self.index_size))
-                self.index.add(to_add)
+                self.index.add(to_add.float())
                 self.index_size += end - start
                 start += end
                 if (start % 1000000) == 0:

@@ -9,9 +9,10 @@ import numpy as np
 code_size = 64
 
 class DatastoreBatch():
-    def __init__(self, dim, batch_size, flat_index=False, gpu_index=False, verbose=False) -> None:
+    def __init__(self, dim, batch_size, flat_index=False, gpu_index=False, verbose=False, index_device=None) -> None:
         self.indices = []
         self.batch_size = batch_size
+        self.device = index_device if index_device is not None else torch.device('cuda' if gpu_index else 'cpu')
         for i in range(batch_size):
             self.indices.append(Datastore(dim, use_flat_index=flat_index, gpu_index=gpu_index, verbose=verbose))
     
@@ -46,8 +47,9 @@ class DatastoreBatch():
         return torch.stack(found_scores, dim=0), torch.stack(found_values, dim=0), torch.stack(found_vectors, dim=0)
 
 class Datastore():
-    def __init__(self, dim, use_flat_index=False, gpu_index=False, verbose=False) -> None:
+    def __init__(self, dim, use_flat_index=False, gpu_index=False, verbose=False, device=None) -> None:
         self.dimension = dim
+        self.device = device if device is not None else torch.device('cuda' if gpu_index else 'cpu')
         self.logger = logging.getLogger('index_building')
         self.logger.setLevel(20)
         self.use_flat_index = use_flat_index
@@ -68,7 +70,7 @@ class Datastore():
     def move_to_gpu(self):
         co = faiss.GpuClonerOptions()
         co.useFloat16 = True
-        self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), 0, self.index, co)
+        self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), self.device.index, self.index, co)
     
     def train_index(self):
         if self.use_flat_index:
@@ -95,7 +97,7 @@ class Datastore():
             start = 0
             while start < keys.shape[0]:
                 end = min(len(keys), start + num_keys_to_add_at_a_time)
-                to_add = keys[start:end]
+                to_add = keys[start:end].to(self.device)
                 if not self.gpu_index:
                     to_add = to_add.cpu().float()
                 # self.index.add_with_ids(to_add, torch.arange(start+self.index_size, end+self.index_size))
@@ -121,17 +123,21 @@ class Datastore():
         return scores, values, vectors
     
     def search(self, queries, k):
+        model_device = queries.device
         if len(queries.shape) == 1: # searching for only 1 vector, add one extra dim
             self.logger.info("Searching for a single vector; unsqueezing")
             queries = queries.unsqueeze(0)
         assert queries.shape[-1] == self.dimension # query vectors are same shape as "key" vectors
         if not self.gpu_index:
             queries = queries.cpu().float()
+        else:
+            queries = queries.to(self.device)
         scores, values = self.index.search(queries, k)
-        # avoid returning -1 as a value
         values[values == -1] = 0
+        
+        # avoid returning -1 as a value
         # self.logger.info("Searching done")
-        return scores, values
+        return scores.to(model_device), values.to(model_device)
 
     
     

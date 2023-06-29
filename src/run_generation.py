@@ -112,6 +112,12 @@ class UnlimiformerArguments:
     unlimiformer_training: Optional[bool] = field(
         default=False,
     )
+    index_device: Optional[int] = field(
+        default=None,
+    )
+    datastore_device: Optional[int] = field(
+        default=None,
+    )
     use_datastore: Optional[bool] = field(default=False)
     flat_index: Optional[bool] = field(default=False)
     test_datastore: Optional[bool] = field(default=False)
@@ -459,7 +465,9 @@ def main():
             'test_datastore': unlimiformer_args.test_datastore,
             'reconstruct_embeddings': unlimiformer_args.reconstruct_embeddings,
             'gpu_datastore': unlimiformer_args.gpu_datastore,
-            'gpu_index': unlimiformer_args.gpu_index
+            'gpu_index': unlimiformer_args.gpu_index,
+            'index_device': unlimiformer_args.index_device,
+            'datastore_device': unlimiformer_args.datastore_device,
         }
         if unlimiformer_args.random_unlimiformer_training:
             model = RandomTrainingUnlimiformer.convert_model(model, **unlimiformer_kwargs)

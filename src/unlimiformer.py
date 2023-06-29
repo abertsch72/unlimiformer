@@ -30,7 +30,9 @@ class Unlimiformer(Generic[ModelType]):
             use_datastore=False, 
             flat_index=False,
             test_datastore=False, reconstruct_embeddings=False, 
-            gpu_datastore=False, gpu_index=False):
+            gpu_datastore=False, gpu_index=False,
+            index_device=None, datastore_device=None,
+            ):
         self.model = model
         self.layer_begin = layer_begin
         self.layer_end = layer_end
@@ -49,6 +51,8 @@ class Unlimiformer(Generic[ModelType]):
         self.reconstruct_embeddings = reconstruct_embeddings
         self.gpu_datastore = gpu_datastore
         self.gpu_index = gpu_index
+        self.index_device = torch.device(f'cuda:{index_device}' if torch.cuda.is_available() else 'cpu')
+        self.datastore_device = torch.device(f'cuda:{datastore_device}' if torch.cuda.is_available() else 'cpu')
         self.test_datastore = test_datastore # flag for debugging
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -129,8 +133,9 @@ class Unlimiformer(Generic[ModelType]):
         decoder_layers_to_run = self.attention_layer_to_run(self.layer_begin, self.layer_end)
         self.original_decoder_layer_cross_attn_forward_funcs = []
         for i, decoder_layer in enumerate(decoder_layers_to_run):
-            self.original_decoder_layer_cross_attn_forward_funcs.append(self.cross_attention(decoder_layer).forward)
-            self.cross_attention(decoder_layer).forward = self.cross_attn_pre_forward_hook
+            decoder_layer_cross_attention = self.cross_attention(decoder_layer)
+            self.original_decoder_layer_cross_attn_forward_funcs.append(decoder_layer_cross_attention.forward)
+            decoder_layer_cross_attention.forward = self.create_cross_attn_pre_forward_hook(decoder_layer_cross_attention.forward, i)
 
         # Inject our hook function in the beginning of generation.
         # When the "model.generate()" will be called, it will first call our "reset_generation()" function, 
@@ -160,9 +165,9 @@ class Unlimiformer(Generic[ModelType]):
 
         self.original_decoder_layer_cross_attn_forward_funcs = []
         for i, decoder_layer in enumerate(decoder_layers_to_run):
-            attention = self.cross_attention(decoder_layer)
-            self.original_decoder_layer_cross_attn_forward_funcs.append(attention.forward)
-            attention.forward = self.cross_attn_pre_forward_hook
+            decoder_layer_cross_attention = self.cross_attention(decoder_layer)
+            self.original_decoder_layer_cross_attn_forward_funcs.append(decoder_layer_cross_attention.forward)
+            decoder_layer_cross_attention.forward = self.create_cross_attn_pre_forward_hook(decoder_layer_cross_attention.forward, i)
 
         self.original_decoder_layer_forward_funcs = []
         for decoder_layer in decoder_layers_to_run:
@@ -332,10 +337,12 @@ class Unlimiformer(Generic[ModelType]):
     def reset_memory(self, input_ids, attention_mask):
         if self.use_datastore:
             if self.is_encoder_decoder:
-                self.datastore = [DatastoreBatch(dim=self.model.config.hidden_size, batch_size=input_ids.shape[0], flat_index=self.flat_index, gpu_index=self.gpu_index)]
+                self.datastore = [DatastoreBatch(dim=self.model.config.hidden_size, batch_size=input_ids.shape[0], flat_index=self.flat_index, 
+                    gpu_index=self.gpu_index, index_device=self.index_device)]
                 self.hidden_states = [[]]
             else:
-                self.datastore = [DatastoreBatch(dim=self.model.config.hidden_size, batch_size=input_ids.shape[0], flat_index=self.flat_index, gpu_index=self.gpu_index) 
+                self.datastore = [DatastoreBatch(dim=self.model.config.hidden_size, batch_size=input_ids.shape[0], flat_index=self.flat_index, 
+                    gpu_index=self.gpu_index, index_device=self.index_device) 
                     for _ in range(self.model.config.num_hidden_layers)[self.layer_begin:self.layer_end]]
                 self.hidden_states = [[] for _ in range(self.model.config.num_hidden_layers)[self.layer_begin:self.layer_end]]
             torch.cuda.empty_cache()
@@ -381,7 +388,7 @@ class Unlimiformer(Generic[ModelType]):
                     if not self.gpu_datastore:
                         to_add_embeddings = [states.cpu() for states in to_add_embeddings]
                     for i, layer_states in enumerate(to_add_embeddings):
-                        self.hidden_states[i].append(layer_states)
+                        self.hidden_states[i].append(layer_states.to(self.datastore_device))
                 # list of len layers, inside it there is a list of len batch, each item is (masked_time, dim)
                 for i, to_add_layer in enumerate(to_add):
                     keys = [key[mask.bool()] for key, mask in zip(to_add_layer, to_apply_mask)]
@@ -521,44 +528,44 @@ class Unlimiformer(Generic[ModelType]):
                 if kwargs.get('decoder_input_ids') is not None:
                     self.generated_input_ids = torch.cat([self.generated_input_ids, kwargs['decoder_input_ids']], axis=-1)
             
-        self.cur_decoder_layer_index = 0
         result = self.original_forward_func(input_ids=input_ids, labels=labels, attention_mask=attention_mask, **kwargs)
         self.is_first_test_decoding_step = False
         return result
 
-    def cross_attn_pre_forward_hook(self, hidden_states, attention_mask=None, *args, **kwargs):
-    # def attention_pre_forward_hook(hidden_states, attention_mask=None, *args, **kwargs):
-        original_cross_attn_forward_func = self.original_decoder_layer_cross_attn_forward_funcs[self.cur_decoder_layer_index]
-        if kwargs.get('past_key_value') is not None:
-            # it's a tuple, and we convert it to a list to be able to perform assignment 
-            # and modify its items from our attention_forward_hook
-            self.cur_layer_key_value_placeholder = \
-                kwargs['past_key_value'] = list(kwargs['past_key_value']) # (batch, head, time, attn_dim)
+    def create_cross_attn_pre_forward_hook(self, original_cross_attn_forward_func, cur_layer_num):
+        def attention_pre_forward_hook(hidden_states, attention_mask=None, *args, **kwargs):
+            self.cur_decoder_layer_index = cur_layer_num
+            if kwargs.get('past_key_value') is not None:
+                # it's a tuple, and we convert it to a list to be able to perform assignment 
+                # and modify its items from our attention_forward_hook
+                self.cur_layer_key_value_placeholder = \
+                    kwargs['past_key_value'] = list(kwargs['past_key_value']) # (batch, head, time, attn_dim)
 
-        batch_size, tgt_len, dim = hidden_states.shape
-        if self.model.training:
-            # from: (batch, tgt_len, dim) to: (batch * tgt_len, 1, dim)
-            hidden_states = hidden_states.reshape(-1, 1, hidden_states.shape[-1])
-            # from: (batch, 1, tgt_len, dim) to: (batch * tgt_len, 1, 1, dim)
-            attention_mask = attention_mask.reshape(-1, 1, 1, attention_mask.shape[-1])
-            
-            attn_output, attn_weights_reshaped, past_key_value = original_cross_attn_forward_func(hidden_states=hidden_states, attention_mask=attention_mask, *args, **kwargs)
-            attn_output = attn_output.reshape(batch_size, tgt_len, dim)
-            result = (attn_output, attn_weights_reshaped, past_key_value)
-        else:
-            result = original_cross_attn_forward_func(hidden_states=hidden_states, attention_mask=attention_mask, *args, **kwargs)
-            # Uri: this part adds the generated tokens to the prompt. 
-            # However it was commented out because currently we always keep the generated tokens in the attention window
-            # if not self.is_encoder_decoder and not self.is_input_encoding_pass and \
-            #         past_key_value[0].shape[2] > self.prompt_keys[self.cur_decoder_layer_index].shape[2]:
-            #     self.prompt_keys[self.cur_decoder_layer_index] = torch.cat([self.prompt_keys[self.cur_decoder_layer_index], past_key_value[0][:,:,-1:]], dim=-2)
-            #     self.prompt_values[self.cur_decoder_layer_index] = torch.cat([self.prompt_values[self.cur_decoder_layer_index], past_key_value[1][:,:,-1:]], dim=-2)
-            #     if self.cur_decoder_layer_index == self.model.config.num_hidden_layers - 1:
-            #         self.prompt_attention_mask = torch.cat([
-            #             self.prompt_attention_mask, 
-            #             torch.ones([self.prompt_attention_mask.shape[0], 1], dtype=self.prompt_attention_mask.dtype).to(self.device)], dim=-1)
-        self.cur_decoder_layer_index += 1
-        return result
+            batch_size, tgt_len, dim = hidden_states.shape
+            if self.model.training:
+                # from: (batch, tgt_len, dim) to: (batch * tgt_len, 1, dim)
+                hidden_states = hidden_states.reshape(-1, 1, hidden_states.shape[-1])
+                # from: (batch, 1, tgt_len, dim) to: (batch * tgt_len, 1, 1, dim)
+                attention_mask = attention_mask.reshape(-1, 1, 1, attention_mask.shape[-1])
+                
+                attn_output, attn_weights_reshaped, past_key_value = original_cross_attn_forward_func(hidden_states=hidden_states, attention_mask=attention_mask, *args, **kwargs)
+                attn_output = attn_output.reshape(batch_size, tgt_len, dim)
+                result = (attn_output, attn_weights_reshaped, past_key_value)
+            else:
+                result = original_cross_attn_forward_func(hidden_states=hidden_states, attention_mask=attention_mask, *args, **kwargs)
+                # Uri: this part adds the generated tokens to the prompt. 
+                # However it was commented out because currently we always keep the generated tokens in the attention window
+                # if not self.is_encoder_decoder and not self.is_input_encoding_pass and \
+                #         past_key_value[0].shape[2] > self.prompt_keys[self.cur_decoder_layer_index].shape[2]:
+                #     self.prompt_keys[self.cur_decoder_layer_index] = torch.cat([self.prompt_keys[self.cur_decoder_layer_index], past_key_value[0][:,:,-1:]], dim=-2)
+                #     self.prompt_values[self.cur_decoder_layer_index] = torch.cat([self.prompt_values[self.cur_decoder_layer_index], past_key_value[1][:,:,-1:]], dim=-2)
+                #     if self.cur_decoder_layer_index == self.model.config.num_hidden_layers - 1:
+                #         self.prompt_attention_mask = torch.cat([
+                #             self.prompt_attention_mask, 
+                #             torch.ones([self.prompt_attention_mask.shape[0], 1], dtype=self.prompt_attention_mask.dtype).to(self.device)], dim=-1)
+        
+            return result
+        return attention_pre_forward_hook
 
 
     def attention_forward_hook(self, module, input, output):

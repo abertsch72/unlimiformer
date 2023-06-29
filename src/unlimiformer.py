@@ -388,11 +388,12 @@ class Unlimiformer(Generic[ModelType]):
                     if not self.gpu_datastore:
                         to_add_embeddings = [states.cpu() for states in to_add_embeddings]
                     for i, layer_states in enumerate(to_add_embeddings):
+                        # TODO: need to add only the non-masked tokens
                         self.hidden_states[i].append(layer_states.to(self.datastore_device))
                 # list of len layers, inside it there is a list of len batch, each item is (masked_time, dim)
-                for i, to_add_layer in enumerate(to_add):
-                    keys = [key[mask.bool()] for key, mask in zip(to_add_layer, to_apply_mask)]
-                    self.datastore[i].add_keys(keys)
+                # for i, to_add_layer in enumerate(to_add):
+                #     keys = [key[mask.bool()] for key, mask in zip(to_add_layer, to_apply_mask)]
+                #     self.datastore[i].add_keys(keys)
             if (not self.use_datastore) or self.test_datastore:
                 layers_kv = [
                     self.process_key_value(layer_capturer) # (batch, head, time, dim)
@@ -416,9 +417,9 @@ class Unlimiformer(Generic[ModelType]):
             # keys are all in datastore already!
             if not self.reconstruct_embeddings:
                 self.hidden_states = [torch.cat(layer_hidden_states, axis=1) for layer_hidden_states in self.hidden_states]
-            for datastore in self.datastore:
+            for datastore, layer_hidden_states in zip(self.datastore, self.hidden_states):
                 # TODO: pass self.hidden_states to the datastore, to avoid the datastore storing them internally as well
-                datastore.train_index()
+                datastore.train_index(layer_hidden_states)
         if (not self.use_datastore) or self.test_datastore:
             for i, (layer_keys, layer_values) in enumerate(zip(self.prompt_keys, self.prompt_values)):
                 self.prompt_keys[i] = torch.cat(layer_keys, dim=-2)

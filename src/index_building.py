@@ -24,9 +24,9 @@ class DatastoreBatch():
         for i in range(self.batch_size):
             self.indices[i].add_keys(keys[i], num_keys_to_add_at_a_time)
         
-    def train_index(self):
-        for index in self.indices:
-            index.train_index()
+    def train_index(self, keys):
+        for index, example_keys in zip(self.indices, keys):
+            index.train_index(example_keys)
     
     def search(self, queries, k):
         found_scores, found_values = [], []
@@ -72,10 +72,11 @@ class Datastore():
         co.useFloat16 = True
         self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), self.device.index, self.index, co)
     
-    def train_index(self):
+    def train_index(self, keys):
         if self.use_flat_index:
+            self.add_keys(keys=keys, index_is_trained=True)
             return
-        self.keys = torch.cat(self.keys, axis=0)
+        # self.keys = torch.cat(self.keys, axis=0)
 
         ncentroids = int(self.keys.shape[0] / 128)
         self.index = faiss.IndexIVFPQ(self.index, self.dimension,
@@ -84,14 +85,14 @@ class Datastore():
         if self.gpu_index:
             self.move_to_gpu()
         else:
-            self.keys = self.keys.cpu()
+            keys = keys.cpu()
 
         self.logger.info('Training index')
         start_time = time.time()
-        self.index.train(self.keys)
+        self.index.train(keys)
         self.logger.info(f'Training took {time.time() - start_time} s')
-        self.add_keys(keys=self.keys, index_is_trained=True)
-        self.keys = None
+        self.add_keys(keys=keys, index_is_trained=True)
+        # self.keys = None
 
     def add_keys(self, keys, num_keys_to_add_at_a_time=1000000, index_is_trained=False):
         if self.use_flat_index or index_is_trained:
@@ -107,8 +108,8 @@ class Datastore():
                 start += end
                 if (start % 1000000) == 0:
                     self.logger.info(f'Added {start} tokens so far')
-        else:
-            self.keys.append(keys)
+        # else:
+        #     self.keys.append(keys)
 
         # self.logger.info(f'Adding total {start} keys')
         # self.logger.info(f'Adding took {time.time() - start_time} s')

@@ -1130,5 +1130,5 @@ class ActivationCapturer(nn.Module):
     
     def forward(self, module, input, output):
         self.captured = input if self.capture_input else output
-        if not self.layer.training:
-            self.captured = self.captured.detach()
+        # if not self.layer.training:
+        #     self.captured = self.captured.detach()

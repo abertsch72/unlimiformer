@@ -72,24 +72,23 @@ class Datastore():
         self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), self.device.index, self.index, co)
     
     def train_index(self, keys):
+        keys = keys.cpu()
         if self.use_flat_index:
             self.add_keys(keys=keys, index_is_trained=True)
-            return
-        # self.keys = torch.cat(self.keys, axis=0)
+        else:
+            ncentroids = int(keys.shape[0] / 128)
+            self.index = faiss.IndexIVFPQ(self.index, self.dimension,
+                ncentroids, code_size, 8)
+            self.index.nprobe = min(32, ncentroids)
+            # if not self.gpu_index:
+            #     keys = keys.cpu()
 
-        ncentroids = int(keys.shape[0] / 128)
-        self.index = faiss.IndexIVFPQ(self.index, self.dimension,
-            ncentroids, code_size, 8)
-        self.index.nprobe = min(32, ncentroids)
-        if not self.gpu_index:
-            keys = keys.cpu()
-
-        self.logger.info('Training index')
-        start_time = time.time()
-        self.index.train(keys)
-        self.logger.info(f'Training took {time.time() - start_time} s')
-        self.add_keys(keys=keys, index_is_trained=True)
-        # self.keys = None
+            self.logger.info('Training index')
+            start_time = time.time()
+            self.index.train(keys)
+            self.logger.info(f'Training took {time.time() - start_time} s')
+            self.add_keys(keys=keys, index_is_trained=True)
+            # self.keys = None
         if self.gpu_index:
             self.move_to_gpu()
 

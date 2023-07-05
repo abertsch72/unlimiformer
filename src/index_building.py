@@ -63,8 +63,8 @@ class Datastore():
         # self.index = faiss.IndexIDMap(self.index) 
 
         self.index_size = 0
-        if self.gpu_index:
-            self.move_to_gpu()
+        # if self.gpu_index:
+        #     self.move_to_gpu()
         
     def move_to_gpu(self):
         co = faiss.GpuClonerOptions()
@@ -81,9 +81,7 @@ class Datastore():
         self.index = faiss.IndexIVFPQ(self.index, self.dimension,
             ncentroids, code_size, 8)
         self.index.nprobe = min(32, ncentroids)
-        if self.gpu_index:
-            self.move_to_gpu()
-        else:
+        if not self.gpu_index:
             keys = keys.cpu()
 
         self.logger.info('Training index')
@@ -92,6 +90,8 @@ class Datastore():
         self.logger.info(f'Training took {time.time() - start_time} s')
         self.add_keys(keys=keys, index_is_trained=True)
         # self.keys = None
+        if self.gpu_index:
+            self.move_to_gpu()
 
     def add_keys(self, keys, num_keys_to_add_at_a_time=1000000, index_is_trained=False):
         if self.use_flat_index or index_is_trained:
@@ -124,22 +124,23 @@ class Datastore():
         return scores, values, vectors
     
     def search(self, queries, k):
-        model_device = queries.device
-        model_dtype = queries.dtype
+        # model_device = queries.device
+        # model_dtype = queries.dtype
         if len(queries.shape) == 1: # searching for only 1 vector, add one extra dim
             self.logger.info("Searching for a single vector; unsqueezing")
             queries = queries.unsqueeze(0)
         assert queries.shape[-1] == self.dimension # query vectors are same shape as "key" vectors
         if not self.gpu_index:
             queries = queries.cpu()
-        else:
-            queries = queries.to(self.device)
+        # else:
+        #     queries = queries.to(self.device)
         scores, values = self.index.search(queries.float(), k)
         values[values == -1] = 0
         
         # avoid returning -1 as a value
         # self.logger.info("Searching done")
-        return scores.to(model_dtype).to(model_device), values.to(model_device)
+        # return scores.to(model_dtype).to(model_device), values.to(model_device)
+        return scores, values
 
     
     

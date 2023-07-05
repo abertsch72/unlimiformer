@@ -372,7 +372,8 @@ class Unlimiformer(Generic[ModelType]):
         for context_start_ind, context_end_ind, update_start_ind, update_end_ind in window_indices:
             chunk = input_ids[:, context_start_ind:context_end_ind].to(self.device)
             chunk_attention_mask = attention_mask[:, context_start_ind:context_end_ind].to(self.device)
-            _ = self.model(chunk, attention_mask=chunk_attention_mask, labels=dummy_labels) # , return_dict=True, output_hidden_states=True)
+            with torch.no_grad():
+                _ = self.model(chunk, attention_mask=chunk_attention_mask, labels=dummy_labels) # , return_dict=True, output_hidden_states=True)
             # TODO: verify with BART as well
             # hidden_states_to_index = [hidden_states.encoder_last_hidden_state] # list of length 1 of (batch, chunked_source_len, dim)
             hidden_states_to_index = [

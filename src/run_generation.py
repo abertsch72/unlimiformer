@@ -544,6 +544,7 @@ def main():
     for generated_sequence_idx, generated_sequence in enumerate(output_sequences):
         print(f"=== GENERATED SEQUENCE {generated_sequence_idx + 1} ===")
         generated_sequence = generated_sequence.tolist()
+        generated_sequence = generated_sequence[len(encoded_prompt[0]):] + tokenizer.encode(' <end_of_prompt> ') + generated_sequence[:len(encoded_prompt[0])]
 
         # Decode text
         text = tokenizer.decode(generated_sequence, clean_up_tokenization_spaces=True)

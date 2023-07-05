@@ -54,7 +54,6 @@ class Datastore():
         self.logger.setLevel(20)
         self.use_flat_index = use_flat_index
         self.gpu_index = gpu_index
-        self.keys = []
 
         # Initialize faiss index
         # TODO: is preprocessing efficient enough to spend time on?
@@ -78,7 +77,7 @@ class Datastore():
             return
         # self.keys = torch.cat(self.keys, axis=0)
 
-        ncentroids = int(self.keys.shape[0] / 128)
+        ncentroids = int(keys.shape[0] / 128)
         self.index = faiss.IndexIVFPQ(self.index, self.dimension,
             ncentroids, code_size, 8)
         self.index.nprobe = min(32, ncentroids)

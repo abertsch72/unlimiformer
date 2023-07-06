@@ -1114,6 +1114,7 @@ class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
         cos, sin = attention.rotary_emb(retrieved_values, seq_len=self.hidden_states[0].shape[1])
         cos = cos.squeeze(1).squeeze(0)  # [seq_len, dim]
         sin = sin.squeeze(1).squeeze(0)  # [seq_len, dim]
+        top_search_key_indices = top_search_key_indices.to(cos.device)
         cos = cos[top_search_key_indices]  # [bs, 1, seq_len, dim]
         sin = sin[top_search_key_indices]  # [bs, 1, seq_len, dim]
         retrieved_keys = (retrieved_keys * cos) + (self.rotate_half(retrieved_keys) * sin)

@@ -67,15 +67,19 @@ class Datastore():
         #     self.move_to_gpu()
         
     def move_to_gpu(self):
-        co = faiss.GpuClonerOptions()
-        co.useFloat16 = True
-        self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), self.device.index, self.index, co)
+        if self.use_flat_index:
+            # self.keys = self.keys.to(self.device)
+            return
+        else:
+            co = faiss.GpuClonerOptions()
+            co.useFloat16 = True
+            self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), self.device.index, self.index, co)
     
     def train_index(self, keys):
-        keys = keys.cpu().float()
         if self.use_flat_index:
             self.add_keys(keys=keys, index_is_trained=True)
         else:
+            keys = keys.cpu().float()
             ncentroids = int(keys.shape[0] / 128)
             self.index = faiss.IndexIVFPQ(self.index, self.dimension,
                 ncentroids, code_size, 8)
@@ -93,7 +97,9 @@ class Datastore():
             self.move_to_gpu()
 
     def add_keys(self, keys, num_keys_to_add_at_a_time=1000000, index_is_trained=False):
-        if self.use_flat_index or index_is_trained:
+        if self.use_flat_index:
+            self.keys = keys
+        elif index_is_trained:
             start = 0
             while start < keys.shape[0]:
                 end = min(len(keys), start + num_keys_to_add_at_a_time)
@@ -129,11 +135,20 @@ class Datastore():
             self.logger.info("Searching for a single vector; unsqueezing")
             queries = queries.unsqueeze(0)
         assert queries.shape[-1] == self.dimension # query vectors are same shape as "key" vectors
-        if not self.gpu_index:
-            queries = queries.cpu()
+        # if not self.gpu_index:
+        #     queries = queries.cpu()
         # else:
         #     queries = queries.to(self.device)
-        scores, values = self.index.search(queries.float(), k)
+        if self.use_flat_index:
+            if self.gpu_index:
+                scores, values = faiss.knn(queries, self.keys, k, metric=faiss.METRIC_INNER_PRODUCT)
+                scores = torch.from_numpy(scores).to(model_dtype)
+                values = torch.from_numpy(values).to(model_dtype)
+            else:
+                scores, values = faiss.knn_gpu(faiss.StandardGpuResources(), queries, self.keys, k, 
+                    metric=faiss.METRIC_INNER_PRODUCT, device=self.device.index)
+        else:
+            scores, values = self.index.search(queries.float(), k)
         values[values == -1] = 0
         
         # avoid returning -1 as a value

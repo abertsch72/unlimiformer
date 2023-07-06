@@ -57,7 +57,8 @@ class Datastore():
 
         # Initialize faiss index
         # TODO: is preprocessing efficient enough to spend time on?
-        self.index = faiss.IndexFlatIP(self.dimension) # inner product index because we use IP attention
+        if not use_flat_index:
+            self.index = faiss.IndexFlatIP(self.dimension) # inner product index because we use IP attention
         
         # need to wrap in index ID map to enable add_with_ids 
         # self.index = faiss.IndexIDMap(self.index) 
@@ -93,8 +94,8 @@ class Datastore():
             self.logger.info(f'Training took {time.time() - start_time} s')
             self.add_keys(keys=keys, index_is_trained=True)
             # self.keys = None
-        if self.gpu_index:
-            self.move_to_gpu()
+            if self.gpu_index:
+                self.move_to_gpu()
 
     def add_keys(self, keys, num_keys_to_add_at_a_time=1000000, index_is_trained=False):
         if self.use_flat_index:

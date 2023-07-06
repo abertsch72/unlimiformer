@@ -69,7 +69,11 @@ class Datastore():
     def move_to_gpu(self):
         co = faiss.GpuClonerOptions()
         co.useFloat16 = True
+        self.cpu_index = self.index
         self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), self.device.index, self.index, co)
+    
+    def move_back_to_cpu(self):
+        self.index = self.cpu_index
     
     def train_index(self, keys):
         keys = keys.cpu().float()
@@ -89,8 +93,8 @@ class Datastore():
             self.logger.info(f'Training took {time.time() - start_time} s')
             self.add_keys(keys=keys, index_is_trained=True)
             # self.keys = None
-        if self.gpu_index:
-            self.move_to_gpu()
+        # if self.gpu_index:
+        #     self.move_to_gpu()
 
     def add_keys(self, keys, num_keys_to_add_at_a_time=1000000, index_is_trained=False):
         if self.use_flat_index or index_is_trained:
@@ -129,11 +133,17 @@ class Datastore():
             self.logger.info("Searching for a single vector; unsqueezing")
             queries = queries.unsqueeze(0)
         assert queries.shape[-1] == self.dimension # query vectors are same shape as "key" vectors
-        if not self.gpu_index:
+        
+        if self.gpu_index:
+            self.move_to_gpu()
+        else:
             queries = queries.cpu()
         # else:
         #     queries = queries.to(self.device)
         scores, values = self.index.search(queries.float(), k)
+        if self.gpu_index:
+            self.move_back_to_cpu()
+
         values[values == -1] = 0
         
         # avoid returning -1 as a value

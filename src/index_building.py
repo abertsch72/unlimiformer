@@ -98,8 +98,8 @@ class Datastore():
             while start < keys.shape[0]:
                 end = min(len(keys), start + num_keys_to_add_at_a_time)
                 to_add = keys[start:end].to(self.device)
-                if not self.gpu_index:
-                    to_add = to_add.cpu()
+                # if not self.gpu_index:
+                #     to_add = to_add.cpu()
                 # self.index.add_with_ids(to_add, torch.arange(start+self.index_size, end+self.index_size))
                 self.index.add(to_add.float())
                 self.index_size += end - start

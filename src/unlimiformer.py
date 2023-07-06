@@ -347,7 +347,7 @@ class Unlimiformer(Generic[ModelType]):
                 self.hidden_states = [[] for _ in range(self.model.config.num_hidden_layers)[self.layer_begin:self.layer_end]]
             torch.cuda.empty_cache()
         self.prompt_input_ids = input_ids
-        self.input_ids_size = 0
+        self.input_ids_size = input_ids.shape[-1]
         self.prompt_keys, self.prompt_values = None, None
         self.prev_tokens = [None for _ in range(len(self.original_decoder_layer_cross_attn_forward_funcs))]
         self.last_beam_idx = None
@@ -527,7 +527,8 @@ class Unlimiformer(Generic[ModelType]):
                     self.is_first_test_decoding_step = True
 
                 if input_ids is not None:
-                    self.input_ids_size += input_ids.shape[-1]
+                    # self.input_ids_size += input_ids.shape[-1]
+                    self.input_ids_size += 1
                 if kwargs.get('decoder_input_ids') is not None:
                     self.generated_input_ids = torch.cat([self.generated_input_ids, kwargs['decoder_input_ids']], axis=-1)
             
@@ -581,6 +582,8 @@ class Unlimiformer(Generic[ModelType]):
             window_size = self.cur_layer_key_value_placeholder[0].shape[-2]
             # topk = min(self.actual_model_window_size, attn_weights.shape[-1])
             topk = min(prompt_size, window_size - generated_size + 1)
+            if self.gpu_index:
+                topk = min(topk, 2048)
 
             query = self.process_query(output)[:,-1] # (batch * beam, head, dim)
             query = query[:, self.head_nums] # (batch * beam, head, dim)
@@ -1079,7 +1082,7 @@ class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
     def preprocess_query(self, query, k_proj_weight):
         # query: (batch * time, head, dim)
         attention = self.model.base_model.layers[-1].self_attn
-        cos, sin = attention.rotary_emb(query, seq_len=self.input_ids_size)
+        cos, sin = attention.rotary_emb(query, seq_len=self.prompt_input_ids.shape[1])
         cos = cos[:,:,-1]  # [1, 1, dim]
         sin = sin[:,:,-1]  # [1, 1, dim]
         # cos = cos[-1].unsqueeze(0).unsqueeze(0)  # [bs, 1, seq_len, dim]

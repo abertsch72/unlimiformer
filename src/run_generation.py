@@ -524,6 +524,7 @@ def main():
 
         model = _ModelFallbackWrapper(traced_model, model)
 
+    streamer = TextStreamer(tokenizer, skip_prompt=True)
     output_sequences = model.generate(
         input_ids=input_ids,
         max_length=args.length + len(encoded_prompt[0]),
@@ -533,6 +534,7 @@ def main():
         repetition_penalty=args.repetition_penalty,
         do_sample=True,
         num_return_sequences=args.num_return_sequences,
+        streamer=streamer,
     )
 
     # Remove the batch dimension when returning multiple sequences

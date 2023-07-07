@@ -51,8 +51,8 @@ class Unlimiformer(Generic[ModelType]):
         self.reconstruct_embeddings = reconstruct_embeddings
         self.gpu_datastore = gpu_datastore
         self.gpu_index = gpu_index
-        self.index_device = torch.device(f'cuda:{index_device}' if torch.cuda.is_available() else 'cpu')
-        self.datastore_device = torch.device(f'cuda:{datastore_device}' if torch.cuda.is_available() else 'cpu')
+        self.index_device = torch.device(f'cuda:{index_device}' if torch.cuda.is_available() and gpu_index else 'cpu')
+        self.datastore_device = torch.device(f'cuda:{datastore_device}' if torch.cuda.is_available() and gpu_datastore else 'cpu')
         self.test_datastore = test_datastore # flag for debugging
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

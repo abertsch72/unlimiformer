@@ -14,7 +14,7 @@ from typing import TypeVar, Generic
 
 from index_building import Datastore, DatastoreBatch
 
-logger = logging.getLogger('attention_knn')
+logger = logging.getLogger('Unlimiformer')
 logger.setLevel(20)
 
 ModelType = TypeVar('ModelType')
@@ -370,6 +370,7 @@ class Unlimiformer(Generic[ModelType]):
         window_indices = self.window_indices(input_ids.shape[-1])
 
         for context_start_ind, context_end_ind, update_start_ind, update_end_ind in window_indices:
+            logger.info(f'Encoding {context_start_ind} to {context_end_ind} out of {input_ids.shape[-1]}')
             chunk = input_ids[:, context_start_ind:context_end_ind].to(self.device)
             chunk_attention_mask = attention_mask[:, context_start_ind:context_end_ind].to(self.device)
             with torch.inference_mode():

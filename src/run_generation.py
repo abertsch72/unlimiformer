@@ -55,6 +55,7 @@ from transformers import (
     XLMWithLMHeadModel,
     XLNetLMHeadModel,
     XLNetTokenizer,
+    TextStreamer,
 )
 from transformers.modeling_outputs import CausalLMOutputWithPast
 

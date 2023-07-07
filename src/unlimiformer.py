@@ -419,6 +419,11 @@ class Unlimiformer(Generic[ModelType]):
             # keys are all in datastore already!
             if not self.reconstruct_embeddings:
                 self.hidden_states = [torch.cat(layer_hidden_states, axis=1) for layer_hidden_states in self.hidden_states]
+                concat_hidden_states = []
+                for i in range(len(self.hidden_states)):
+                    concat_hidden_states.append(torch.cat(self.hidden_states[i], axis=1))
+                    self.hidden_states[i] = None
+                self.hidden_states = concat_hidden_states
             for datastore, layer_hidden_states in zip(self.datastore, self.hidden_states):
                 # TODO: pass self.hidden_states to the datastore, to avoid the datastore storing them internally as well
                 datastore.train_index(layer_hidden_states)

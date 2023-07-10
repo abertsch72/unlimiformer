@@ -31,7 +31,7 @@ class Unlimiformer(Generic[ModelType]):
             flat_index=False,
             test_datastore=False, reconstruct_embeddings=False, 
             gpu_datastore=False, gpu_index=False,
-            index_device=None, datastore_device=None,
+            index_devices=(0,), datastore_device=None,
             ):
         super().__init__()
         self.model = model
@@ -53,7 +53,10 @@ class Unlimiformer(Generic[ModelType]):
         self.reconstruct_embeddings = reconstruct_embeddings
         self.gpu_datastore = gpu_datastore
         self.gpu_index = gpu_index
-        self.index_device = torch.device(f'cuda:{index_device}' if torch.cuda.is_available() and gpu_index else 'cpu')
+        if torch.cuda.is_available() and gpu_index:
+            self.index_devices = [torch.device(f'cuda:{i}') for i in index_devices]
+        else:
+            self.index_devices = [torch.device('cpu')]
         self.datastore_device = torch.device(f'cuda:{datastore_device}' if torch.cuda.is_available() and gpu_datastore else 'cpu')
         self.test_datastore = test_datastore # flag for debugging
 
@@ -340,12 +343,12 @@ class Unlimiformer(Generic[ModelType]):
         if self.use_datastore:
             if self.is_encoder_decoder:
                 self.datastore = [DatastoreBatch(dim=self.model.config.hidden_size, batch_size=input_ids.shape[0], flat_index=self.flat_index, 
-                    gpu_index=self.gpu_index, index_device=self.index_device)]
+                    gpu_index=self.gpu_index, index_device=self.index_devices[0])]
                 self.hidden_states = [[]]
             else:
                 self.datastore = [DatastoreBatch(dim=self.model.config.hidden_size, batch_size=input_ids.shape[0], flat_index=self.flat_index, 
-                    gpu_index=self.gpu_index, index_device=self.index_device) 
-                    for _ in range(self.model.config.num_hidden_layers)[self.layer_begin:self.layer_end]]
+                    gpu_index=self.gpu_index, index_device=self.index_devices[i % len(self.index_devices)]) 
+                    for i in range(self.model.config.num_hidden_layers)[self.layer_begin:self.layer_end]]
                 self.hidden_states = [[] for _ in range(self.model.config.num_hidden_layers)[self.layer_begin:self.layer_end]]
             torch.cuda.empty_cache()
         self.prompt_input_ids = input_ids

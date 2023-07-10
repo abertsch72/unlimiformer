@@ -33,7 +33,9 @@ class Unlimiformer(Generic[ModelType]):
             gpu_datastore=False, gpu_index=False,
             index_device=None, datastore_device=None,
             ):
+        super().__init__()
         self.model = model
+        model.unlimiformer = self
         self.layer_begin = layer_begin
         self.layer_end = layer_end
         self.specific_head = unlimiformer_head_num
@@ -385,12 +387,14 @@ class Unlimiformer(Generic[ModelType]):
                 to_add = [state[:, update_start_ind:update_end_ind].detach() for state in hidden_states_to_index]
                 to_add = self.preprocess_hidden_states(to_add)
                 to_apply_mask = chunk_attention_mask[:, update_start_ind:update_end_ind]
+                to_apply_mask = to_apply_mask.log().to(to_add[0].dtype)
                 if not self.reconstruct_embeddings:
                     to_add_embeddings = to_add
                     if not self.gpu_datastore:
                         to_add_embeddings = [states.cpu() for states in to_add_embeddings]
                     for i, layer_states in enumerate(to_add_embeddings):
                         # TODO: need to add only the non-masked tokens
+                        layer_states = layer_states + to_apply_mask.unsqueeze(-1)
                         self.hidden_states[i].append(layer_states.to(self.datastore_device))
                 # list of len layers, inside it there is a list of len batch, each item is (masked_time, dim)
                 # for i, to_add_layer in enumerate(to_add):
@@ -425,7 +429,6 @@ class Unlimiformer(Generic[ModelType]):
                     self.hidden_states[i] = None
                 self.hidden_states = concat_hidden_states
             for datastore, layer_hidden_states in zip(self.datastore, self.hidden_states):
-                # TODO: pass self.hidden_states to the datastore, to avoid the datastore storing them internally as well
                 datastore.train_index(layer_hidden_states)
         if (not self.use_datastore) or self.test_datastore:
             for i, (layer_keys, layer_values) in enumerate(zip(self.prompt_keys, self.prompt_values)):
@@ -515,7 +518,11 @@ class Unlimiformer(Generic[ModelType]):
             new_kwargs['attention_mask'] = kwargs['attention_mask'][:, :self.actual_model_window_size].to(self.device)
         new_kwargs['use_cache'] = True
         # TODO: in decoder models, maybe need to pass the suffix instead
-        input_ids_prefix = input_ids[:, :self.actual_model_window_size].to(self.device)
+        if self.is_encoder_decoder:
+            input_ids_prefix = input_ids[:, :self.actual_model_window_size]
+        else:
+            input_ids_prefix = input_ids[:, -self.actual_model_window_size:]
+        input_ids_prefix = input_ids_prefix.to(self.device)
         return self.original_generate_func(input_ids_prefix, **new_kwargs)
 
     def pre_forward_hook(self, input_ids=None, attention_mask=None, labels=None, **kwargs):

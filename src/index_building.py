@@ -146,8 +146,8 @@ class Datastore():
                     metric=faiss.METRIC_INNER_PRODUCT, device=self.device.index)
             else:
                 scores, values = faiss.knn(queries, self.keys, k, metric=faiss.METRIC_INNER_PRODUCT)
-                scores = torch.from_numpy(scores).to(model_dtype)
-                values = torch.from_numpy(values).to(model_dtype)
+                scores = torch.from_numpy(scores).to(queries.dtype)
+                values = torch.from_numpy(values) #.to(model_dtype)
         else:
             scores, values = self.index.search(queries.float(), k)
         values[values == -1] = 0

@@ -98,9 +98,8 @@ class Datastore():
                 self.move_to_gpu()
 
     def add_keys(self, keys, num_keys_to_add_at_a_time=1000000, index_is_trained=False):
-        if self.use_flat_index:
-            self.keys = keys
-        elif index_is_trained:
+        self.keys = keys
+        if not self.use_flat_index and index_is_trained:
             start = 0
             while start < keys.shape[0]:
                 end = min(len(keys), start + num_keys_to_add_at_a_time)

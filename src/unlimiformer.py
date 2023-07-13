@@ -395,6 +395,7 @@ class Unlimiformer(Generic[ModelType]):
                     to_add_embeddings = to_add
                     if not self.gpu_datastore:
                         to_add_embeddings = [states.cpu() for states in to_add_embeddings]
+                        to_apply_mask = to_apply_mask.cpu()
                     for i, layer_states in enumerate(to_add_embeddings):
                         # TODO: need to add only the non-masked tokens
                         layer_states = layer_states + to_apply_mask.unsqueeze(-1)

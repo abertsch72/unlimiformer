@@ -149,9 +149,10 @@ class Datastore():
                 values = torch.from_numpy(values) #.to(model_dtype)
         else:
             scores, values = self.index.search(queries.float(), k)
-        values[values == -1] = 0
         
         # avoid returning -1 as a value
+        # TODO: get a handle on the attention mask and mask the values that were -1
+        values = torch.where(torch.logical_or(values < 0, values >= self.keys.shape[0]), torch.zeros_like(values), values)
         # self.logger.info("Searching done")
         # return scores.to(model_dtype).to(model_device), values.to(model_device)
         return scores, values

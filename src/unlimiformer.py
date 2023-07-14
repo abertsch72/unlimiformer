@@ -380,13 +380,13 @@ class Unlimiformer(Generic[ModelType]):
             chunk_attention_mask = attention_mask[:, context_start_ind:context_end_ind].to(self.device)
             with torch.inference_mode():
                 _ = self.model(chunk, attention_mask=chunk_attention_mask, labels=dummy_labels) # , return_dict=True, output_hidden_states=True)
-            # TODO: verify with BART as well
-            # hidden_states_to_index = [hidden_states.encoder_last_hidden_state] # list of length 1 of (batch, chunked_source_len, dim)
-            hidden_states_to_index = [
-                layer_capturer.captured for layer_capturer in self.activation_capturer
-            ] 
-            # hidden_states_to_index = list(hidden_states.hidden_states)[:-1][self.layer_begin:self.layer_end]
             if self.use_datastore:
+                # TODO: verify with BART as well
+                # hidden_states_to_index = [hidden_states.encoder_last_hidden_state] # list of length 1 of (batch, chunked_source_len, dim)
+                hidden_states_to_index = [
+                    layer_capturer.captured for layer_capturer in self.activation_capturer
+                ] 
+                # hidden_states_to_index = list(hidden_states.hidden_states)[:-1][self.layer_begin:self.layer_end]
                 to_add = [state[:, update_start_ind:update_end_ind].detach() for state in hidden_states_to_index]
                 to_add = self.preprocess_hidden_states(to_add)
                 to_apply_mask = chunk_attention_mask[:, update_start_ind:update_end_ind]

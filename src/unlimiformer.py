@@ -623,9 +623,9 @@ class Unlimiformer(Generic[ModelType]):
                 # then search
                 if self.reconstruct_embeddings:
                     # embeddings: (batch, beam * head, actual_model_window_size, dim)
-                    top_search_key_scores, top_search_key_indices, embeddings = self.datastore[datastore_index].search_and_reconstruct(datastore_query, k=topk) 
+                    _, top_search_key_indices, embeddings = self.datastore[datastore_index].search_and_reconstruct(datastore_query, k=topk) 
                 else:
-                    top_search_key_scores, top_search_key_indices = self.datastore[datastore_index].search(datastore_query, k=topk)
+                    _, top_search_key_indices = self.datastore[datastore_index].search(datastore_query, k=topk)
                     # self.embeddings: (batch,              src_len, dim)
                     # indices:         (batch, beam * head, actual_model_window_size)
                     # embeddings: (batch, beam * head, actual_model_window_size, dim)
@@ -633,7 +633,7 @@ class Unlimiformer(Generic[ModelType]):
                         indices=top_search_key_indices.unsqueeze(-1).to(self.hidden_states[datastore_index].device), dim=-2)
                     embeddings = embeddings.to(self.device)
                 # (batch, beam, head, actual_model_window_size)
-                top_search_key_scores = top_search_key_scores.reshape(batch_size, -1, *top_search_key_scores.shape[1:])
+                # top_search_key_scores = top_search_key_scores.reshape(batch_size, -1, *top_search_key_scores.shape[1:])
                 top_search_key_indices = top_search_key_indices.reshape(batch_size, -1, *top_search_key_indices.shape[1:])
                 # embeddings: (batch, beam, head, actual_model_window_size, dim)
                 embeddings = embeddings.reshape(batch_size, -1, *embeddings.shape[1:])

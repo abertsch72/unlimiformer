@@ -399,6 +399,7 @@ def main():
     parser.add_argument("--p", type=float, default=0.9)
 
     parser.add_argument("--prefix", type=str, default="", help="Text added prior to input.")
+    parser.add_argument("--suffix", type=str, default="", help="Text added after the input.")
     parser.add_argument("--padding_text", type=str, default="", help="Deprecated, the use of `--prefix` is preferred.")
     parser.add_argument("--xlm_language", type=str, default="", help="Optional language when used with the XLM model.")
 
@@ -495,11 +496,12 @@ def main():
             preprocessed_prompt_text, add_special_tokens=False, return_tensors="pt", **tokenizer_kwargs
         )
     else:
-        prefix = args.prefix if args.prefix else args.padding_text
+        # prefix = args.prefix if args.prefix else args.padding_text
+        prompt_text = f'{args.prefix}{prompt_text}{args.suffix}'
         encoded_prompt = tokenizer.encode(prefix + prompt_text, add_special_tokens=False, return_tensors="pt")
     
     if not unlimiformer_args.test_unlimiformer:
-        encoded_prompt = encoded_prompt[:, -args.length :]
+        encoded_prompt = encoded_prompt[:, -2048:]
         encoded_prompt = encoded_prompt.to(args.device)
 
     if encoded_prompt.size()[-1] == 0:

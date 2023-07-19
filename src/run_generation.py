@@ -498,7 +498,7 @@ def main():
     else:
         # prefix = args.prefix if args.prefix else args.padding_text
         prompt_text = f'{args.prefix}{prompt_text}{args.suffix}'
-        encoded_prompt = tokenizer.encode(prefix + prompt_text, add_special_tokens=False, return_tensors="pt")
+        encoded_prompt = tokenizer.encode(prompt_text, add_special_tokens=False, return_tensors="pt")
     
     if not unlimiformer_args.test_unlimiformer:
         encoded_prompt = encoded_prompt[:, -2048:]

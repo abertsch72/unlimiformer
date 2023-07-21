@@ -31,7 +31,7 @@ class Unlimiformer(Generic[ModelType]):
             flat_index=False,
             test_datastore=False, reconstruct_embeddings=False, 
             gpu_datastore=False, gpu_index=False,
-            index_devices=(0,), datastore_device=None,
+            index_devices=(0,), datastore_device=0,
             ):
         super().__init__()
         self.model = model

@@ -113,10 +113,10 @@ class UnlimiformerArguments:
         default=False,
     )
     index_devices: Optional[List[int]] = field(
-        default=None,
+        default=(0,),
     )
     datastore_device: Optional[int] = field(
-        default=None,
+        default=0,
     )
     use_datastore: Optional[bool] = field(default=True)
     flat_index: Optional[bool] = field(default=False)

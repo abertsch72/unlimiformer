@@ -118,7 +118,7 @@ class UnlimiformerArguments:
     datastore_device: Optional[int] = field(
         default=None,
     )
-    use_datastore: Optional[bool] = field(default=False)
+    use_datastore: Optional[bool] = field(default=True)
     flat_index: Optional[bool] = field(default=False)
     test_datastore: Optional[bool] = field(default=False)
     reconstruct_embeddings: Optional[bool] = field(default=False)

@@ -443,10 +443,11 @@ def main():
     if args.num_hidden_layers is not None:
         model_kwargs["num_hidden_layers"] = args.num_hidden_layers
     model = model_class.from_pretrained(args.model_name_or_path, **model_kwargs)
-    model.to(args.device)
 
     if args.fp16:
         model.half()
+    model.to(args.device)
+
     max_seq_length = getattr(model.config, "max_position_embeddings", 0)
     args.length = adjust_length_to_model(args.length, max_sequence_length=max_seq_length)
     logger.info(args)

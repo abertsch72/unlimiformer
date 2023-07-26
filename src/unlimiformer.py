@@ -1137,9 +1137,12 @@ class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
         cos, sin = attention.rotary_emb(retrieved_values, seq_len=self.hidden_states[0].shape[1])
         cos = cos.squeeze(1).squeeze(0)  # [seq_len, dim]
         sin = sin.squeeze(1).squeeze(0)  # [seq_len, dim]
-        # scale the top key indices to the actual model window size, such that the model will not see
-        # positional embeddings that did not appear at training time
-        scaled_key_indices = ((top_search_key_indices / self.prompt_input_ids.shape[1]) * self.actual_model_window_size).int()
+        if self.prompt_input_ids.shape[1] > self.actual_model_window_size:
+            # scale the top key indices to the actual model window size, such that the model will not see
+            # positional embeddings that did not appear at training time
+            scaled_key_indices = ((top_search_key_indices / self.prompt_input_ids.shape[1]) * self.actual_model_window_size).int()
+        else:
+            scaled_key_indices = top_search_key_indices
         # top_search_key_indices = top_search_key_indices.to(cos.device)
         scaled_key_indices = scaled_key_indices.to(cos.device)
         cos = cos[scaled_key_indices]  # [bs, 1, seq_len, dim]

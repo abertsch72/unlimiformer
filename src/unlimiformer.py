@@ -486,12 +486,15 @@ class Unlimiformer(Generic[ModelType]):
             return [(0, total_seq_len, 0, total_seq_len)]
         else:
             results = []
-            stride = self.model_encoder_max_len - 2 * self.window_margin
             # if self.chunk_overlap == 0:
             #     stride = self.model_encoder_max_len
+            stride = self.model_encoder_max_len - 2 * self.window_margin
             context_start = update_start_ind = 0
             context_end = self.model_encoder_max_len
-            update_end_ind = context_end - self.window_margin
+            if self.is_encoder_decoder:
+                update_end_ind = context_end - self.window_margin
+            else:
+                update_end_ind = context_end
             # first window always should update from the beginning
             results.append((context_start, context_end, update_start_ind, update_end_ind))  
 

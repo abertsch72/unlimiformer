@@ -405,6 +405,7 @@ def main():
 
     parser.add_argument("--seed", type=int, default=42, help="random seed for initialization")
     parser.add_argument("--no_cuda", action="store_true", help="Avoid using CUDA when available")
+    parser.add_argument("--stream_output", action="store_true")
     parser.add_argument("--num_return_sequences", type=int, default=1, help="The number of samples to generate.")
     parser.add_argument(
         "--fp16",
@@ -527,7 +528,6 @@ def main():
 
         model = _ModelFallbackWrapper(traced_model, model)
 
-    streamer = TextStreamer(tokenizer, skip_prompt=True)
     output_sequences = model.generate(
         input_ids=input_ids,
         # max_length=args.length + len(encoded_prompt[0]),
@@ -538,7 +538,7 @@ def main():
         repetition_penalty=args.repetition_penalty,
         do_sample=True,
         num_return_sequences=args.num_return_sequences,
-        streamer=streamer,
+        streamer=TextStreamer(tokenizer, skip_prompt=True) if args.stream_output else None,
     )
 
     # Remove the batch dimension when returning multiple sequences
@@ -562,7 +562,8 @@ def main():
 
         # Add the prompt at the beginning of the sequence. Remove the excess text that was used for pre-processing
         total_sequence = (
-            prompt_text + '|||' + completion
+            # prompt_text + 
+            '|||' + completion
         )
 
         generated_sequences.append(total_sequence)

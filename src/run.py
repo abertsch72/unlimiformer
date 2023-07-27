@@ -304,7 +304,7 @@ class DataTrainingArguments:
         default=None,
     )
     length_penalty: Optional[float] = field(
-        default=None,
+        default=1.0,
     )
     extra_metrics: Optional[List[str]] = field(
         default=None,

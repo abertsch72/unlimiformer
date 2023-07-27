@@ -388,7 +388,6 @@ class Unlimiformer(Generic[ModelType]):
                 ] 
                 # hidden_states_to_index = list(hidden_states.hidden_states)[:-1][self.layer_begin:self.layer_end]
                 to_add = [state[:, update_start_ind:update_end_ind].detach() for state in hidden_states_to_index]
-                to_add = self.preprocess_hidden_states(to_add)
                 to_apply_mask = chunk_attention_mask[:, update_start_ind:update_end_ind]
                 to_apply_mask = to_apply_mask.log().to(to_add[0].dtype)
                 if not self.reconstruct_embeddings:
@@ -639,7 +638,7 @@ class Unlimiformer(Generic[ModelType]):
                 # top_search_key_scores = top_search_key_scores.reshape(batch_size, -1, *top_search_key_scores.shape[1:])
                 top_search_key_indices = top_search_key_indices.reshape(batch_size, -1, *top_search_key_indices.shape[1:])
                 # embeddings: (batch, beam, head, actual_model_window_size, dim)
-                embeddings = embeddings.reshape(batch_size, -1, *embeddings.shape[1:])
+                embeddings = embeddings.reshape(batch_size, -1, self.num_heads, *embeddings.shape[2:])
                                     
             # raw_values are actually token indices; need to look them up
             if (not self.use_datastore) or self.test_datastore:
@@ -756,8 +755,6 @@ class Unlimiformer(Generic[ModelType]):
         self.cur_layer_key_value_placeholder[1] = new_values.flatten(0, 1).squeeze(2)
         return
 
-    def preprocess_hidden_states(self, to_add):
-        return to_add
     
     def preprocess_query(self, query, k_proj_weight):
         k_proj = k_proj_weight.view(1, self.num_heads, query.shape[-1], k_proj_weight.shape[0]) # (1, num_heads, attn_dim, embed_dim)
@@ -779,6 +776,7 @@ class Unlimiformer(Generic[ModelType]):
         # new_keys, new_values: (batch, beam, head, encoder_len, attn_dim)
         retrieved_keys = torch.matmul(embeddings, k_weight) + k_bias # (beam, head, encoder_len, embed_dim)
         retrieved_values = torch.matmul(embeddings, v_weight) + v_bias # (beam, head, encoder_len, embed_dim)
+        return retrieved_keys, retrieved_values
 
     def set_gradient_checkpointing(self, value):
         self.model.base_model.decoder.gradient_checkpointing = value
@@ -887,10 +885,7 @@ class UnlimiformerBART(Unlimiformer[BartModel]):
 
     def activation_to_capture(self, layer_begin, layer_end): 
         if self.use_datastore:
-            return [
-                layer # TODO: verify with BART
-                for layer in self.model.base_model.encoder.layers[layer_begin:layer_end]
-            ]
+            return [self.model.base_model.encoder.layers[-1]]
         else:
             return self.get_kv_projections(layer_begin, layer_end)
 
@@ -969,15 +964,6 @@ class UnlimiformerT5(Unlimiformer[T5Model]):
             [layer.layer[1].EncDecAttention.k, layer.layer[1].EncDecAttention.v]
                 for layer in self.model.base_model.decoder.block[layer_begin:layer_end]
         ]
-
-    def activation_to_capture(self, layer_begin, layer_end): 
-        if self.use_datastore:
-            return [
-                layer # TODO: verify with BART
-                for layer in self.model.base_model.encoder.layers[layer_begin:layer_end]
-            ]
-        else:
-            return self.get_kv_projections(layer_begin, layer_end)
     
     def attention_op_to_run(self, layer_begin, layer_end):
         return [
@@ -1087,12 +1073,6 @@ class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
         query = output.view(output.shape[0], output.shape[1], attention.num_heads, attention.head_dim).contiguous()
         return query
 
-    # def preprocess_hidden_states(self, to_add):
-    #     layers = self.model.base_model.layers[self.layer_begin:self.layer_end]
-
-    #     normalized_to_add = [layer.input_layernorm(to_add_layer) for to_add_layer, layer in zip(to_add, layers)]
-    #     return normalized_to_add
-
     def rotate_half(self, x):
         """Rotates half the hidden dims of the input."""
         x1 = x[..., : x.shape[-1] // 2]
@@ -1159,8 +1139,14 @@ class ActivationCapturer(nn.Module):
 
         self.captured = None
 
+    def unwrap_tuple(self, t):
+        if isinstance(t, tuple) and len(t) == 1:
+            t = t[0]
+        return t
     
-    def forward(self, module, input, output):
-        self.captured = input if self.capture_input else output
-        # if not self.layer.training:
-        #     self.captured = self.captured.detach()
+    def forward(self, module, layer_input, layer_output):
+        if self.capture_input:
+            self.captured = self.unwrap_tuple(layer_input)
+        else:
+            self.captured = self.unwrap_tuple(layer_output)
+    

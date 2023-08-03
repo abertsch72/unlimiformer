@@ -389,15 +389,15 @@ class Unlimiformer(Generic[ModelType]):
                 # hidden_states_to_index = list(hidden_states.hidden_states)[:-1][self.layer_begin:self.layer_end]
                 to_add = [state[:, update_start_ind:update_end_ind].detach() for state in hidden_states_to_index]
                 to_apply_mask = chunk_attention_mask[:, update_start_ind:update_end_ind]
-                to_apply_mask = to_apply_mask.log().to(to_add[0].dtype)
+                # to_apply_mask = to_apply_mask.log().to(to_add[0].dtype)
+                to_apply_mask = to_apply_mask.to(to_add[0].dtype)
                 if not self.reconstruct_embeddings:
                     to_add_embeddings = to_add
                     if not self.gpu_datastore:
                         to_add_embeddings = [states.cpu() for states in to_add_embeddings]
                         to_apply_mask = to_apply_mask.cpu()
                     for i, layer_states in enumerate(to_add_embeddings):
-                        # TODO: need to add only the non-masked tokens
-                        layer_states = layer_states + to_apply_mask.unsqueeze(-1)
+                        layer_states = layer_states * to_apply_mask.unsqueeze(-1)
                         self.hidden_states[i].append(layer_states.to(self.datastore_device))
                 # list of len layers, inside it there is a list of len batch, each item is (masked_time, dim)
                 # for i, to_add_layer in enumerate(to_add):
@@ -523,7 +523,6 @@ class Unlimiformer(Generic[ModelType]):
             new_kwargs = {k: v for k, v in kwargs.items() if k != 'attention_mask'}
             new_kwargs['attention_mask'] = kwargs['attention_mask'][:, :self.actual_model_window_size].to(self.device)
         new_kwargs['use_cache'] = True
-        # TODO: in decoder models, maybe need to pass the suffix instead
         if self.is_encoder_decoder:
             input_ids_prefix = input_ids[:, :self.actual_model_window_size]
         else:

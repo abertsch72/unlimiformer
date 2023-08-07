@@ -528,6 +528,7 @@ def main():
 
         model = _ModelFallbackWrapper(traced_model, model)
 
+    model.eval()
     output_sequences = model.generate(
         input_ids=input_ids,
         # max_length=args.length + len(encoded_prompt[0]),

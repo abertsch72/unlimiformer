@@ -88,13 +88,11 @@ class Unlimiformer(Generic[ModelType]):
         self.training_hooks_injected = False
         self.original_forward_func = model.forward
 
-        # Activate AttentionKNN when calling model.eval(), deactivate for model.train()
+        # Activate Unlimiformer when calling model.eval(), deactivate for model.train()
         self.original_model_eval_func = model.eval
         model.eval = self.pre_eval_hook
         self.original_model_train_func = model.train
         model.train = self.pre_train_hook
-
-        model.eval()
 
     def pre_eval_hook(self):
         self.remove_training_hooks(self.model)

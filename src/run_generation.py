@@ -119,7 +119,7 @@ class UnlimiformerArguments:
         default=0,
     )
     use_datastore: Optional[bool] = field(default=True)
-    flat_index: Optional[bool] = field(default=False)
+    flat_index: Optional[bool] = field(default=True)
     test_datastore: Optional[bool] = field(default=False)
     reconstruct_embeddings: Optional[bool] = field(default=False)
     gpu_datastore: Optional[bool] = field(default=True)
@@ -382,7 +382,7 @@ def main():
     )
 
     parser.add_argument("--prompt", type=str, default="")
-    parser.add_argument("--length", type=int, default=20)
+    parser.add_argument("--length", type=int, default=100)
     parser.add_argument("--num_hidden_layers", type=int, default=None)
     parser.add_argument("--stop_token", type=str, default=None, help="Token at which text generation is stopped")
 

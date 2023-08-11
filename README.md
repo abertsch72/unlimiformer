@@ -1,5 +1,5 @@
 # Unlimiformer
-![image](https://user-images.githubusercontent.com/42593540/236538293-1d5fdfe3-3e34-4979-9611-a9c9f56e3a00.png)
+![unlimiformer_diagram3_with_overlaps](https://github.com/abertsch72/unlimiformer/assets/15002544/55c5e623-b4de-48a5-b717-fe6ead95e66c)
 
 This is the official implementation of the paper:
 
@@ -10,9 +10,27 @@ Unlimiformer is a method for augmenting pretrained encoder-decoder models with r
 This allows the use of unlimited length inputs with any pretrained encoder-decoder!  
 See also our [**Tweet**](https://twitter.com/abertsch72/status/1654110919977324545?s=20).
 
-Unlimiformer can be used to improve performance of an already-trained model. For best results, the model can be trained with Unlimiformer training. 
+Unlimiformer can be used to improve the performance of an already-trained model. For best results, the model can be trained with Unlimiformer training. 
 
 If you have any questions on this work, please open a [GitHub issue](https://github.com/abertsch72/unlimiformer/issues) or email the authors at ```abertsch@cs.cmu.edu, ualon@cs.cmu.edu```
+
+## **_August 2023_** - Unlimiformer now supports **Llama-2** (and all its derivatives)! 
+To prompt Llama-2 with extremely long inputs, for example, the content of an *entire book*, use:
+```bash
+python src/run_generation.py --model_type llama --model_name_or_path meta-llama/Llama-2-13b-chat-hf \
+    --prefix "<<SYS>>\n You are a helpful assistant. Answer with detailed responses according to the entire instruction or question. \n<</SYS>>\n\n [INST] Summarize the following book: " \
+    --prompt example_inputs/harry_potter_full.txt \
+    --suffix " [/INST]" --test_unlimiformer --fp16 --length 200 --layer_begin 23 \
+    --index_devices 1 --datastore_device 1 
+```
+* The final prompt will be a concatenation of the content of the flags: `--prefix`, `--prompt`, `--suffix`.
+* The flag `--prompt` may contain either a path to a text file (e.g., `example_inputs/harry_potter_full.txt`) or the concrete prompt string.
+* The flag `--test_unlimiformer` is required to enable Unlimiformer.
+* The flag `--length` determines the desired output length.
+* The flag `--layer_begin` determines the layer from which Unlimiformer will start to be applied. For example, if we set `--layer_begin 20`, the first 20 layers of the model will perform the standard attention over the last `context_window_size` tokens of the prompt as usual, and the 21st layer and above will attend to the _entire long input_. From our initial experiments, the value of `--layer_begin` should be more than half of the total number of layers in the model, and tuning it dramatically changes the quality of the output.
+* The flags: `--datastore_device N` and `--index_devices N1 N2 N3 ...` specify on which GPUs to store Unlimiformer's datastore and index (the base model will be stored on GPU #0).
+* Add the flag `--stream_output` to make the generated tokens appear one by one as they are generated.
+
 
 ## Getting Started
 

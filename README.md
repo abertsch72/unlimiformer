@@ -21,7 +21,7 @@ Copy the files from `src` into your source code folder.
 
 You'll need to set values for the Unlimiformer-specific arguments outlined in [`usage.py`](https://github.com/abertsch72/unlimiformer/blob/main/src/usage.py) - you can add these arguments wherever you usually process hyperparameters. To use the model, you must set `test_unlimiformer=True`. For datastore usage, the model must be in evaluation model (e.g. call ```model.eval()``` before inference). 
 
-[`inference-example.py`](https://github.com/abertsch72/unlimiformer/blob/main/src/usage.py) outlines a minimal example for running a sequence through an Unlimiformer model, using the default arguments. 
+[`inference-example.py`](https://github.com/abertsch72/unlimiformer/blob/main/src/inference-example.py) outlines a minimal example for running a sequence through an Unlimiformer model, using the default arguments. 
 
 [`run.py`](https://github.com/abertsch72/unlimiformer/blob/main/src/run.py) is an example of a full training setup that integrates Unlimiformer, adopted from [SLED](https://github.com/Mivg/SLED). See full command lines below.
 

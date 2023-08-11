@@ -597,7 +597,9 @@ class Unlimiformer(Generic[ModelType]):
             generated_size = self.input_ids_size - prompt_size
             window_size = self.cur_layer_key_value_placeholder[0].shape[-2]
             # topk = min(self.actual_model_window_size, attn_weights.shape[-1])
-            topk = min(prompt_size, window_size - generated_size + 1)
+            topk = min(prompt_size, window_size)
+            if not self.is_encoder_decoder:
+                topk = min(topk, window_size - generated_size + 1)
             if self.gpu_index:
                 topk = min(topk, 2048)
 

@@ -113,7 +113,7 @@ class UnlimiformerArguments:
         default=False,
     )
     index_devices: Optional[List[int]] = field(
-        default=(0,),
+        default_factory=lambda: (0,),
     )
     datastore_device: Optional[int] = field(
         default=0,

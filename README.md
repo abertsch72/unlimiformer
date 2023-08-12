@@ -20,7 +20,7 @@ To prompt Llama-2 with extremely long inputs, for example, the content of an *en
 python src/run_generation.py --model_type llama --model_name_or_path meta-llama/Llama-2-13b-chat-hf \
     --prefix "<<SYS>>\n You are a helpful assistant. Answer with detailed responses according to the entire instruction or question. \n<</SYS>>\n\n [INST] Summarize the following book: " \
     --prompt example_inputs/harry_potter_full.txt \
-    --suffix " [/INST]" --test_unlimiformer --fp16 --length 200 --layer_begin 23 \
+    --suffix " [/INST]" --test_unlimiformer --fp16 --length 200 --layer_begin 16 \
     --index_devices 1 --datastore_device 1 
 ```
 * The final prompt will be a concatenation of the content of the flags: `--prefix`, `--prompt`, `--suffix`.

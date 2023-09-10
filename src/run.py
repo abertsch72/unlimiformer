@@ -36,7 +36,7 @@ import torch
 sys.path.insert(0, os.path.dirname(__file__))  # seq2seq package path
 sys.path.insert(0, os.getcwd())
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List, Optional
 import json
 from copy import deepcopy
@@ -702,12 +702,12 @@ def main():
         untokenized_eval_dataset_orig = untokenized_eval_dataset
         assert training_args.eval_fraction > 0
         n = len(untokenized_eval_dataset)
-        training_args.eval_fraction = min(training_args.eval_fraction, n)
+        training_args = replace(training_args, eval_fraction = min(training_args.eval_fraction, n))
         if training_args.eval_fraction != 1:
             if training_args.eval_fraction > 1:
                 assert training_args.eval_fraction == int(training_args.eval_fraction)
                 logger.info(f'using predetermined absolute samples from eval set ({training_args.eval_fraction} )')
-                training_args.eval_fraction = training_args.eval_fraction / n
+                training_args = replace(training_args, eval_fraction = training_args.eval_fraction / n)
             indices = np.random.permutation(n)[:int(np.ceil(max(1, training_args.eval_fraction * n)))]
             untokenized_eval_dataset = type(untokenized_eval_dataset).from_dict(untokenized_eval_dataset[indices])
             logger.info(f'During training, will only use {training_args.eval_fraction:.3%} samples of the eval set '

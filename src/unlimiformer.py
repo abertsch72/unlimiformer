@@ -1081,12 +1081,13 @@ class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
     def preprocess_query(self, query, k_proj_weight):
         # query: (batch * time, head, dim)
         attention = self.model.base_model.layers[-1].self_attn
-        cos, sin = attention.rotary_emb(query, seq_len=self.prompt_input_ids.shape[1])
+        num_generated = min(self.input_ids_size - self.prompt_input_ids.shape[1], self.actual_model_window_size)
+        cos, sin = attention.rotary_emb(query, seq_len=num_generated)
         cos = cos[:,:,-1]  # [1, 1, dim]
         sin = sin[:,:,-1]  # [1, 1, dim]
         # cos = cos[-1].unsqueeze(0).unsqueeze(0)  # [bs, 1, seq_len, dim]
         # sin = sin[-1].unsqueeze(0)  # [bs, 1, seq_len, dim]
-        q_embed = (query * cos) + (self.rotate_half(query) * sin)
+        query = (query * cos) + (self.rotate_half(query) * sin)
         
         k_proj = k_proj_weight.view(1, self.num_heads, query.shape[-1], k_proj_weight.shape[0]) # (1, num_heads, attn_dim, embed_dim)
         k_proj_l = k_proj[..., :k_proj.shape[-2] // 2, :]

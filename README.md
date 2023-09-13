@@ -48,7 +48,6 @@ You'll need to set values for the Unlimiformer-specific arguments outlined in [`
 To run a standard finetuning + evaluation of BART-base on the GovReport dataset (as examples), use:
 ```python
 python src/run.py \
-    src/configs/model/bart_base_sled.json 
     src/configs/training/base_training_args.json \
     src/configs/data/gov_report.json \
     --output_dir output_train_bart_base_local/ \
@@ -61,8 +60,8 @@ python src/run.py \
     --extra_metrics bertscore
 ```
 
-* To use Unlimiformer at **test**/validation time, use also: `--test_unlimiformer --eval_max_source_length 999999`
 * To use Unlimiformer at **training** time (called "Retrieval training" in the paper), use: `--unlimiformer_training --max_source_length 16384`
+    * In this case, you might want to use Unlimiformer also at **test**/validation time, and use also: `--test_unlimiformer --eval_max_source_length 999999`
 * Alternatively, to use the computationally cheaper "Random-encoded" at **training** time, use `--random_unlimiformer_training --max_source_length 16384`
 * To altenate between "retrieval training" and "random-encoded training", use both flags: `--unlimiformer_training --random_unlimiformer_training --max_source_length 16384`
 

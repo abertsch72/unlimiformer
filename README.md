@@ -63,7 +63,7 @@ python src/run.py \
 * To use Unlimiformer at **training** time (called "Retrieval training" in the paper), use: `--unlimiformer_training --max_source_length 16384`
     * In this case, you might want to use Unlimiformer also at **test**/validation time, and use also: `--test_unlimiformer --eval_max_source_length 999999`
 * Alternatively, to use the computationally cheaper "Random-encoded" at **training** time, use `--random_unlimiformer_training --max_source_length 16384`
-* To altenate between "retrieval training" and "random-encoded training", use both flags: `--unlimiformer_training --random_unlimiformer_training --max_source_length 16384`
+* To alternate between "retrieval training" and "random-encoded training", use both flags: `--unlimiformer_training --random_unlimiformer_training --max_source_length 16384`
 
 For additional flags and options, see [`usage.py`](https://github.com/abertsch72/unlimiformer/blob/main/src/usage.py)
 

@@ -620,7 +620,7 @@ def main():
             untokenized_train_dataset = untokenized_train_dataset.select(range(data_args.max_train_samples))
 
         if DEBUG:
-            # In debug mode, we want ot recreate the data
+            # In debug mode, we want to recreate the data
             data_args.shared_storage = False
             data_args.overwrite_cache = True
         with training_args.main_process_first(

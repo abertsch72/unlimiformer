@@ -67,7 +67,7 @@ class UnlimiformerArguments:
 
 # include these lines in your code somewhere before model training
 def training_addin():
-    if knn_args.test_unlimiformer:
+    if unlimiformer_args.test_unlimiformer:
         unlimiformer_kwargs = {
             'layer_begin': unlimiformer_args.layer_begin, 
             'layer_end': unlimiformer_args.layer_end,

@@ -4,7 +4,7 @@
 This is the official implementation of the paper:
 
 [Amanda Bertsch](https://www.cs.cmu.edu/~abertsch/), [Uri Alon](https://urialon.ml/), [Graham Neubig](http://www.phontron.com/), and [Matthew R. Gormley](http://www.cs.cmu.edu/~mgormley/):   
-[Unlimiformer: Long-Range Transformers with Unlimited Length Input](https://arxiv.org/pdf/2305.01625)
+[Unlimiformer: Long-Range Transformers with Unlimited Length Input](https://arxiv.org/pdf/2305.01625) (to appear in **NeurIPS 2023**)
 
 Unlimiformer is a method for augmenting pretrained encoder-decoder models with retrieval-based attention, without changing the mathematical definition of attention. 
 This allows the use of unlimited length inputs with any pretrained encoder-decoder!  
@@ -13,6 +13,8 @@ See also our [**Tweet**](https://twitter.com/abertsch72/status/16541109199773245
 Unlimiformer can be used to improve the performance of an already-trained model. For best results, the model can be trained with Unlimiformer training. 
 
 If you have any questions on this work, please open a [GitHub issue](https://github.com/abertsch72/unlimiformer/issues) or email the authors at ```abertsch@cs.cmu.edu, ualon@cs.cmu.edu```
+
+## **_October 2023_** - Unlimiformer will appear at NeurIPS 2023!
 
 ## **_August 2023_** - Unlimiformer now supports **Llama-2** (and all its derivatives)! 
 To prompt Llama-2 with extremely long inputs, for example, the content of an *entire book*, use:

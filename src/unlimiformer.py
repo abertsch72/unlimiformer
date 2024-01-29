@@ -72,6 +72,8 @@ class Unlimiformer(Generic[ModelType]):
         self.cur_decoder_layer_index = None
         self.datastore = None
 
+        self.input_ids_size = 0  # must be initialized here to run forward() without generate
+
         self.break_into(model)
 
     def break_into(self, model):

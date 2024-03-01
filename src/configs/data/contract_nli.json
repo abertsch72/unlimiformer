@@ -1,0 +1,12 @@
+{
+  "dataset_name": "tau/sled",
+  "dataset_config_name": "contract_nli",
+  "max_source_length": 16384,
+  "max_prefix_length": 64,
+  "pad_prefix": true,
+  "generation_max_length": 8,
+  "num_train_epochs": 20,
+  "metric_names": ["exact_match"],
+  "metric_for_best_model": "exact_match",
+  "greater_is_better": true
+}

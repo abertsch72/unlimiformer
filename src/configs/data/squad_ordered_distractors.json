@@ -1,0 +1,12 @@
+{
+  "dataset_name": "tau/sled",
+  "dataset_config_name": "squad_ordered_distractors",
+  "max_source_length": 16384,
+  "max_prefix_length": 64,
+  "pad_prefix": true,
+  "num_train_epochs": 3,
+  "generation_max_length": 128,
+  "metric_names": ["f1", "exact_match"],
+  "metric_for_best_model": "f1",
+  "greater_is_better": true
+}

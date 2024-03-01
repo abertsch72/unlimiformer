@@ -1,0 +1,12 @@
+{
+  "dataset_name": "tau/sled",
+  "dataset_config_name": "summ_screen_fd",
+  "max_source_length": 16384,
+  "max_prefix_length": 0,
+  "pad_prefix": false,
+  "num_train_epochs": 10,
+  "generation_max_length": 1024,
+  "metric_names": ["rouge"],
+  "metric_for_best_model": "rouge/geometric_mean",
+  "greater_is_better": true
+}

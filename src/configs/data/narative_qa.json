@@ -1,0 +1,12 @@
+{
+  "dataset_name": "tau/sled",
+  "dataset_config_name": "narrative_qa",
+  "max_source_length": 16384,
+  "max_prefix_length": 64,
+  "pad_prefix": true,
+  "num_train_epochs": 2,
+  "generation_max_length": 128,
+  "metric_names": ["f1"],
+  "metric_for_best_model": "f1",
+  "greater_is_better": true
+}

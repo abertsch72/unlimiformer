@@ -1,0 +1,10 @@
+sentencepiece
+protobuf<=3.20.1
+nltk
+datasets>=1.17.0
+absl-py
+rouge-score
+pandas
+transformers>=4.27.0
+wandb
+makefun>=1.14.0

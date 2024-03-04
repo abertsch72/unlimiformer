@@ -681,7 +681,7 @@ class Unlimiformer(Generic[ModelType]):
                     # indices:         (batch, beam * head, actual_model_window_size)
                     # embeddings: (batch, beam * head, actual_model_window_size, dim)
                     if self.preserve_ordering:
-                        top_search_key_indices.sort() 
+                        top_search_key_indices[0].sort() 
                     embeddings = torch.take_along_dim(input=self.hidden_states[datastore_index].unsqueeze(1), 
                         indices=top_search_key_indices.unsqueeze(-1).to(self.hidden_states[datastore_index].device), dim=-2)
                     embeddings = embeddings.to(self.device)

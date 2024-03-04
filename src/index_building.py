@@ -55,6 +55,7 @@ class Datastore():
         self.logger.setLevel(20)
         self.use_flat_index = use_flat_index
         self.gpu_index = gpu_index
+        self.keys = None
 
         # Initialize faiss index
         # TODO: is preprocessing efficient enough to spend time on?

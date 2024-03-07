@@ -12,7 +12,8 @@ from transformers import BartModel, BartForConditionalGeneration, \
 
 from typing import TypeVar, Generic
 
-from unlimiformer.src.index_building import Datastore, DatastoreBatch
+#TODO: add "unlimiformer back in"
+from src.index_building import Datastore, DatastoreBatch
 
 logger = logging.getLogger('Unlimiformer')
 logger.setLevel(20)
@@ -408,6 +409,7 @@ class Unlimiformer(Generic[ModelType]):
                 to_apply_mask = chunk_attention_mask[:, update_start_ind:update_end_ind]
                 # to_apply_mask = to_apply_mask.log().to(to_add[0].dtype)
                 to_apply_mask = to_apply_mask.to(to_add[0].dtype)
+                to_apply_mask = to_apply_mask.to(to_add[0].device)
                 if not self.reconstruct_embeddings:
                     to_add_embeddings = to_add
                     if not self.gpu_datastore:
@@ -1075,6 +1077,7 @@ class UnlimiformerLED(UnlimiformerBART):
 class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
     def __init__(self, model: LlamaModel, *args, **kwargs):
         super().__init__(model, *args, **kwargs, preserve_ordering=True)
+        print(kwargs)
     
     def get_kv_projections(self, layer_begin, layer_end): 
         return [

@@ -365,6 +365,7 @@ class _ModelFallbackWrapper(GenerationMixin):
 
 
 def main():
+    
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model_type",
@@ -437,13 +438,14 @@ def main():
     except KeyError:
         raise KeyError("the model {} you specified is not supported. You are welcome to add it and open a PR :)")
 
-    tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path)
+    token = "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"
+    tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path, use_auth_token=token)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model_kwargs = {}
     if args.num_hidden_layers is not None:
         model_kwargs["num_hidden_layers"] = args.num_hidden_layers
-    model = model_class.from_pretrained(args.model_name_or_path, **model_kwargs)
+    model = model_class.from_pretrained(args.model_name_or_path, use_auth_token=token, **model_kwargs)
 
     if args.fp16:
         model.half()
@@ -454,6 +456,9 @@ def main():
     logger.info(args)
 
     if unlimiformer_args.test_unlimiformer:
+        # model = Unlimiformer.convert_model(model, layer_begin=layer_begin, layer_end=layer_end, 
+        # flat_index=flat_index, device=device, use_datastore=True, gpu_datastore=False, gpu_index=False)
+
         unlimiformer_kwargs = {
             'layer_begin': unlimiformer_args.layer_begin, 
             'layer_end': unlimiformer_args.layer_end,
@@ -484,23 +489,9 @@ def main():
             prompt_text = f.read()
 
     # Different models need different input formatting and/or extra arguments
-    requires_preprocessing = args.model_type in PREPROCESSING_FUNCTIONS.keys()
-    if requires_preprocessing:
-        prepare_input = PREPROCESSING_FUNCTIONS.get(args.model_type)
-        preprocessed_prompt_text = prepare_input(args, model, tokenizer, prompt_text)
 
-        if model.__class__.__name__ in ["TransfoXLLMHeadModel"]:
-            tokenizer_kwargs = {"add_space_before_punct_symbol": True}
-        else:
-            tokenizer_kwargs = {}
-
-        encoded_prompt = tokenizer.encode(
-            preprocessed_prompt_text, add_special_tokens=False, return_tensors="pt", **tokenizer_kwargs
-        )
-    else:
-        # prefix = args.prefix if args.prefix else args.padding_text
-        prompt_text = f'{args.prefix}{prompt_text}{args.suffix}'
-        encoded_prompt = tokenizer.encode(prompt_text, add_special_tokens=False, return_tensors="pt")
+    prompt_text = f'{args.prefix}{prompt_text}{args.suffix}'
+    encoded_prompt = tokenizer.encode(prompt_text, add_special_tokens=False, return_tensors="pt")
     
     if not unlimiformer_args.test_unlimiformer:
         encoded_prompt = encoded_prompt[:, -2048:]
@@ -511,36 +502,20 @@ def main():
     else:
         input_ids = encoded_prompt
 
-    if args.jit:
-        jit_input_texts = ["enable jit"]
-        jit_inputs = prepare_jit_inputs(jit_input_texts, model, tokenizer)
-        torch._C._jit_set_texpr_fuser_enabled(False)
-        model.config.return_dict = False
-        if hasattr(model, "forward"):
-            sig = inspect.signature(model.forward)
-        else:
-            sig = inspect.signature(model.__call__)
-        jit_inputs = tuple(jit_inputs[key] for key in sig.parameters if jit_inputs.get(key, None) is not None)
-        traced_model = torch.jit.trace(model, jit_inputs, strict=False)
-        traced_model = torch.jit.freeze(traced_model.eval())
-        traced_model(*jit_inputs)
-        traced_model(*jit_inputs)
-
-        model = _ModelFallbackWrapper(traced_model, model)
-
     model.eval()
     print("eval")
+    input_ids = input_ids.to(model.device)
     output_sequences = model.generate(
         input_ids=input_ids,
         # max_length=args.length + len(encoded_prompt[0]),
-        max_new_tokens=args.length,
-        temperature=args.temperature,
-        top_k=args.k,
-        top_p=args.p,
-        repetition_penalty=args.repetition_penalty,
-        do_sample=True,
-        num_return_sequences=args.num_return_sequences,
-        streamer=TextStreamer(tokenizer, skip_prompt=True) if args.stream_output else None,
+        max_new_tokens=5,#args.length,
+        #temperature=args.temperature,
+        #top_k=args.k,
+        #top_p=args.p,
+        #repetition_penalty=args.repetition_penalty,
+        #do_sample=True,
+        #num_return_sequences=args.num_return_sequences,
+        #streamer=TextStreamer(tokenizer, skip_prompt=True) if args.stream_output else None,
     )
 
     # Remove the batch dimension when returning multiple sequences

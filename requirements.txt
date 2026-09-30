@@ -5,6 +5,6 @@ datasets>=1.17.0
 absl-py
 rouge-score
 pandas
-transformers>=4.27.0
+transformers>=4.27.0,<5.0.0
 wandb
 makefun>=1.14.0

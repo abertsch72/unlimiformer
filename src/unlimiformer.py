@@ -391,14 +391,15 @@ class Unlimiformer(Generic[ModelType]):
                 to_apply_mask = chunk_attention_mask[:, update_start_ind:update_end_ind]
                 # to_apply_mask = to_apply_mask.log().to(to_add[0].dtype)
                 to_apply_mask = to_apply_mask.to(to_add[0].dtype)
-                if not self.reconstruct_embeddings:
-                    to_add_embeddings = to_add
-                    if not self.gpu_datastore:
-                        to_add_embeddings = [states.cpu() for states in to_add_embeddings]
-                        to_apply_mask = to_apply_mask.cpu()
-                    for i, layer_states in enumerate(to_add_embeddings):
-                        layer_states = layer_states * to_apply_mask.unsqueeze(-1)
-                        self.hidden_states[i].append(layer_states.to(self.datastore_device))
+                # The index needs the source vectors for training, even when retrieval
+                # will reconstruct vectors from the trained index later.
+                to_add_embeddings = to_add
+                if not self.gpu_datastore:
+                    to_add_embeddings = [states.cpu() for states in to_add_embeddings]
+                    to_apply_mask = to_apply_mask.cpu()
+                for i, layer_states in enumerate(to_add_embeddings):
+                    layer_states = layer_states * to_apply_mask.unsqueeze(-1)
+                    self.hidden_states[i].append(layer_states.to(self.datastore_device))
                 # list of len layers, inside it there is a list of len batch, each item is (masked_time, dim)
                 # for i, to_add_layer in enumerate(to_add):
                 #     keys = [key[mask.bool()] for key, mask in zip(to_add_layer, to_apply_mask)]
@@ -424,15 +425,18 @@ class Unlimiformer(Generic[ModelType]):
         
         if self.use_datastore:
             # keys are all in datastore already!
-            if not self.reconstruct_embeddings:
-                # self.hidden_states = [torch.cat(layer_hidden_states, axis=1) for layer_hidden_states in self.hidden_states]
-                concat_hidden_states = []
-                for i in range(len(self.hidden_states)):
-                    concat_hidden_states.append(torch.cat(self.hidden_states[i], axis=1))
-                    self.hidden_states[i] = None
-                self.hidden_states = concat_hidden_states
+            # Build the index from all input vectors before they are released. The
+            # reconstruct_embeddings path still needs this training data.
+            concat_hidden_states = []
+            for i in range(len(self.hidden_states)):
+                concat_hidden_states.append(torch.cat(self.hidden_states[i], axis=1))
+                self.hidden_states[i] = None
+            self.hidden_states = concat_hidden_states
+            self.datastore_sequence_length = self.hidden_states[0].shape[1]
             for datastore, layer_hidden_states in zip(self.datastore, self.hidden_states):
-                datastore.train_index(layer_hidden_states)
+                datastore.train_index(layer_hidden_states, keep_keys=not self.reconstruct_embeddings)
+            if self.reconstruct_embeddings:
+                self.hidden_states = [None for _ in self.hidden_states]
         if (not self.use_datastore) or self.test_datastore:
             for i, (layer_keys, layer_values) in enumerate(zip(self.prompt_keys, self.prompt_values)):
                 self.prompt_keys[i] = torch.cat(layer_keys, dim=-2)
@@ -1116,7 +1120,7 @@ class UnlimiformerLLaMa(Unlimiformer[LlamaModel]):
         retrieved_values = torch.matmul(embeddings, v_weight) + v_bias # (beam, head, encoder_len, embed_dim)
 
         attention = self.model.base_model.layers[-1].self_attn
-        cos, sin = attention.rotary_emb(retrieved_values, seq_len=self.hidden_states[0].shape[1])
+        cos, sin = attention.rotary_emb(retrieved_values, seq_len=self.datastore_sequence_length)
         cos = cos.squeeze(1).squeeze(0)  # [seq_len, dim]
         sin = sin.squeeze(1).squeeze(0)  # [seq_len, dim]
         if self.prompt_input_ids.shape[1] > self.actual_model_window_size:

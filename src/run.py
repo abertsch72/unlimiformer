@@ -62,6 +62,7 @@ from datasets import load_dataset
 
 from utils.config import handle_args_to_ignore
 from utils.decoding import decode
+from utils.tokenized_inputs import preprocess_tokenized_inputs
 from metrics import load_metric
 from utils.duplicates import drop_duplicates_in_input
 from utils.override_training_args import TrainingOverridesArguments
@@ -1077,7 +1078,14 @@ def preprocess_function(
     pad_prefix
 ):
     if not isinstance(examples[input_column][0], str):
-        model_inputs = _preprocess_tokenized_inputs()
+        if prefix or (input_prefix_column is not None and input_prefix_column in examples):
+            raise ValueError("Text prefixes cannot be combined with already-tokenized inputs")
+        model_inputs = preprocess_tokenized_inputs(
+            examples,
+            input_column,
+            max_source_length,
+            assign_zero_to_too_long_val_examples,
+        )
     else:
         model_inputs = _preprocess_raw_inputs(assign_zero_to_too_long_val_examples, examples, input_column, input_prefix_column,
                                               max_source_length, padding, prefix, tokenizer, trim_very_long_strings, max_prefix_length,

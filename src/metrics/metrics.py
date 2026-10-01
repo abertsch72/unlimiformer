@@ -64,6 +64,8 @@ class MetricCollection(Metric):
             results.update({f"{metric_prefix}{k}": np.mean(v) if type(v) is list else v for k, v in result.items() if type(v) is not str})
 
         results["num_predicted"] = len(id_to_pred)
+        if id_to_pred_decoded is None:
+            id_to_pred_decoded = self._decode(id_to_pred)
         results["mean_prediction_length_characters"] = np.mean([len(pred) for pred in id_to_pred_decoded.values()])
 
         elem = next(iter(id_to_pred.values()))

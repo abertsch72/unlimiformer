@@ -81,6 +81,8 @@ class Unlimiformer(Generic[ModelType]):
         if self.model_encoder_max_len is None:
             self.model_encoder_max_len = self.actual_model_window_size
         self.window_margin = int(self.model_encoder_max_len * self.chunk_overlap / 2)
+        if self.model_encoder_max_len - 2 * self.window_margin <= 0:
+            raise ValueError("model_encoder_max_len and chunk_overlap must produce a positive chunk stride")
         self.num_heads = model.config.num_attention_heads
         if self.specific_head is None:
             self.head_nums = Ellipsis # torch.arange(0, self.num_heads, device=self.device)
